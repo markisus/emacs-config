@@ -52,7 +52,7 @@
 
 (global-set-key [remap dabbrev-expand] 'hippie-expand)
 
-(add-to-list 'load-path "~/.emacs.d") ;; for gtags.el, needed by
+(add-to-list 'load-path "~/.emacs.d/lisp") ;; for gtags.el, needed by
 				      ;; ggtags.el copied from gnu
 				      ;; global installation
 
