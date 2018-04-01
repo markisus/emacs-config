@@ -1,4 +1,4 @@
-;;; pg-init.el --- Init file used for compatibility with package.el and ELPA  -*- lexical-binding: t; -*-
+;;; test pg-init.el --- Init file used for compatibility with package.el and ELPA  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2017  Clément Pit-Claudel
 
