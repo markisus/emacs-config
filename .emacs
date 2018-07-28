@@ -9,6 +9,7 @@
       c-basic-offset 4)
 
 (add-to-list 'auto-mode-alist '("\\.h\\'" . c++-mode))
+(add-to-list 'auto-mode-alist '("\\.qml\\'" . javascript-mode))
 
 ;; Added by Package.el.  This must come before configurations of
 ;; installed packages.  Don't delete this line.  If you don't want it,
@@ -36,8 +37,7 @@
  '(doc-view-resolution 1200)
  '(doc-view-scale-internally t)
  '(ggtags-sort-by-nearness t)
- '(ido-enable-flex-matching t)
- '(ido-mode nil nil (ido))
+ '(org-catch-invisible-edits (quote smart))
  '(package-selected-packages
    (quote
     (counsel swiper ivy google-c-style modern-cpp-font-lock ggtags yasnippet company mode-line-bell avy)))
@@ -63,7 +63,6 @@
 (add-to-list 'load-path "~/.emacs.d/lisp") ;; for gtags.el, needed by
 				      ;; ggtags.el copied from gnu
 				      ;; global installation
-
 (add-hook 'prog-mode-hook
 	  (lambda () (ggtags-mode t)))
 
@@ -92,3 +91,15 @@
 (global-set-key (kbd "C-c j") 'counsel-git-grep)
 (global-set-key (kbd "C-c k") 'counsel-ag)
 (global-set-key (kbd "C-x l") 'counsel-locate)
+
+(global-set-key (kbd "C-c r") 'revert-buffer)
+(global-set-key (kbd "C-c x") 'replace-rectangle)
+(global-set-key (kbd "C-c c") 'compile)
+
+(defun duplicate-line ()
+  "Duplicate current line"
+  (interactive)
+  (kill-whole-line)
+  (yank)
+  (yank))
+(global-set-key (kbd "C-c d") 'duplicate-line)
