@@ -11,7 +11,8 @@
 (add-hook 'c-mode-common-hook (lambda () (c-set-offset 'innamespace 0)))
 
 (add-to-list 'auto-mode-alist '("\\.h\\'" . c++-mode))
-(add-to-list 'auto-mode-alist '("\\.qml\\'" . javascript-mode))
+(add-to-list 'auto-mode-alist '("\\.cu\\'" . c++-mode)) ;; cuda
+(add-to-list 'auto-mode-alist '("\\.qml\\'" . javascript-mode)) ;; qt
 (add-to-list 'auto-mode-alist '("/BUILD\\'" . bazel-mode))
 (add-to-list 'auto-mode-alist '("/WORKSPACE\\'" . bazel-mode))
 (add-to-list 'auto-mode-alist '("\\.h'" . c++-mode))
@@ -130,3 +131,4 @@
   ;; put the point in the lowest line and return
   (next-line arg))
 
+(setq-default indent-tabs-mode nil)
