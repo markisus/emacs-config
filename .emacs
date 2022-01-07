@@ -3,6 +3,15 @@
 (setq inhibit-startup-message t)
 (tool-bar-mode -1)
 (menu-bar-mode -1)
+(setq-default indent-tabs-mode nil)
+(setq-default tab-width 2)
+(setq js-indent-level 2)
+
+; put all backup files into the /temp directory
+(setq backup-directory-alist
+      `((".*" . ,temporary-file-directory)))
+(setq auto-save-file-name-transforms
+      `((".*" ,temporary-file-directory t)))
 
 ;; (set-face-attribute 'default nil :height 80)
 (setq c-default-style "linux"
@@ -11,11 +20,11 @@
 (add-hook 'c-mode-common-hook (lambda () (c-set-offset 'innamespace 0)))
 
 (add-to-list 'auto-mode-alist '("\\.h\\'" . c++-mode))
-(add-to-list 'auto-mode-alist '("\\.cu\\'" . c++-mode)) ;; cuda
-(add-to-list 'auto-mode-alist '("\\.qml\\'" . javascript-mode)) ;; qt
+(add-to-list 'auto-mode-alist '("\\.qml\\'" . javascript-mode))
 (add-to-list 'auto-mode-alist '("/BUILD\\'" . bazel-mode))
 (add-to-list 'auto-mode-alist '("/WORKSPACE\\'" . bazel-mode))
 (add-to-list 'auto-mode-alist '("\\.h'" . c++-mode))
+(add-to-list 'auto-mode-alist '("\\.ino\\'" . c++-mode))
 
 ;; ;; Added by Package.el.  This must come before configurations of
 ;; ;; installed packages.  Don't delete this line.  If you don't want it,
@@ -36,7 +45,7 @@
  '(company-backends
    (quote
     (company-capf company-files
-		  (company-dabbrev-code company-etags company-keywords))))
+                  (company-dabbrev-code company-etags company-keywords))))
  '(company-idle-delay 0.0)
  '(coq-compile-before-require nil)
  '(custom-enabled-themes (quote (wombat)))
@@ -46,7 +55,7 @@
  '(org-catch-invisible-edits (quote smart))
  '(package-selected-packages
    (quote
-    (counsel-etags yasnippet-snippets yasnippet esup protobuf-mode magit hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy)))
+    (proof-general svelte-mode flymd zoom-window counsel-etags yasnippet-snippets yasnippet esup protobuf-mode magit hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy)))
  '(term-suppress-hard-newline t))
 
 (unless package-archive-contents
@@ -84,11 +93,11 @@
 (global-set-key (kbd "C-x C-f") 'counsel-find-file)
 (global-set-key (kbd "C-c g") 'counsel-git)
 (global-set-key (kbd "C-c j") 'counsel-git-grep)
-(global-set-key (kbd "C-c k") 'counsel-ag)
+(global-set-key (kbd "C-c k") 'counsel-rg)
 (global-set-key (kbd "C-x l") 'counsel-locate)
 (global-set-key (kbd "M-.") 'counsel-etags-find-tag-at-point)
 
-(global-set-key (kbd "C-:") 'avy-goto-char-2)
+(global-set-key (kbd "C-:") 'avy-goto-char-timer)
 (global-set-key (kbd "C-c r") 'revert-buffer)
 (global-set-key (kbd "C-c x") 'replace-rectangle)
 (global-set-key (kbd "C-c c") 'compile)
@@ -101,6 +110,8 @@
 (global-set-key (kbd "C-c d") 'duplicate-line)
 (global-set-key (kbd "C-q") 'clang-format-buffer)
 (global-set-key [remap dabbrev-expand] 'hippie-expand)
+(global-set-key (kbd "C-c z") 'zoom-window-zoom)
+(global-set-key (kbd "C-c y") 'counsel-yank-pop)
 
 (defun duplicate-line (arg)
   "Duplicate current line, leaving point in lower line."
@@ -131,4 +142,3 @@
   ;; put the point in the lowest line and return
   (next-line arg))
 
-(setq-default indent-tabs-mode nil)
