@@ -13,6 +13,23 @@
 (setq auto-save-file-name-transforms
       `((".*" ,temporary-file-directory t)))
 
+(pixel-scroll-precision-mode) ; scroll by pixel instead of line
+
+(defun wsl-copy (start end)
+  (interactive "r")
+  (shell-command-on-region start end "clip.exe"))
+
+(defun wsl-paste ()
+  (interactive)
+  (let ((wslbuffername "wsl-temp-buffer"))
+    (get-buffer-create wslbuffername)
+    (with-current-buffer wslbuffername
+      (insert (let ((coding-system-for-read 'dos))
+                ;; TODO: put stderr somewhere else
+                (shell-command "powershell.exe -command 'Get-Clipboard' 2> /dev/null" wslbuffername nil))))
+    (insert-buffer wslbuffername)
+    (kill-buffer wslbuffername)))
+
 ;; (set-face-attribute 'default nil :height 80)
 (setq c-default-style "linux"
       c-indent-level 4
@@ -43,19 +60,17 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(company-backends
-   (quote
-    (company-capf company-files
-                  (company-dabbrev-code company-etags company-keywords))))
+   '(company-capf company-files
+                  (company-dabbrev-code company-etags company-keywords)))
  '(company-idle-delay 0.0)
  '(coq-compile-before-require nil)
- '(custom-enabled-themes (quote (wombat)))
+ '(custom-enabled-themes '(wombat))
  '(doc-view-resolution 1200)
  '(doc-view-scale-internally t)
  '(ggtags-sort-by-nearness t)
- '(org-catch-invisible-edits (quote smart))
+ '(org-catch-invisible-edits 'smart)
  '(package-selected-packages
-   (quote
-    (proof-general svelte-mode flymd zoom-window counsel-etags yasnippet-snippets yasnippet esup protobuf-mode magit hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy)))
+   '(proof-general svelte-mode flymd zoom-window counsel-etags yasnippet-snippets yasnippet esup protobuf-mode magit hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy))
  '(term-suppress-hard-newline t))
 
 (unless package-archive-contents
