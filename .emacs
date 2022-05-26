@@ -6,6 +6,7 @@
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 2)
 (setq js-indent-level 2)
+(setq subword-mode 1)
 
 ; put all backup files into the /temp directory
 (setq backup-directory-alist
@@ -70,7 +71,7 @@
  '(ggtags-sort-by-nearness t)
  '(org-catch-invisible-edits 'smart)
  '(package-selected-packages
-   '(proof-general svelte-mode flymd zoom-window counsel-etags yasnippet-snippets yasnippet esup protobuf-mode magit hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy))
+   '(flycheck lsp-ivy zig-mode lsp-mode magit proof-general svelte-mode flymd zoom-window counsel-etags yasnippet-snippets yasnippet esup protobuf-mode hungry-delete bazel-mode clang-format counsel swiper ivy google-c-style modern-cpp-font-lock ggtags company mode-line-bell avy))
  '(term-suppress-hard-newline t))
 
 (unless package-archive-contents
@@ -128,6 +129,8 @@
 (global-set-key (kbd "C-c z") 'zoom-window-zoom)
 (global-set-key (kbd "C-c y") 'counsel-yank-pop)
 
+(global-set-key (kbd "M-s") 'sort-lines)
+
 (defun duplicate-line (arg)
   "Duplicate current line, leaving point in lower line."
   (interactive "*p")
@@ -156,4 +159,11 @@
     ) ; end-of-let
   ;; put the point in the lowest line and return
   (next-line arg))
+
+
+(require 'lsp-mode)
+(setq lsp-zig-zls-executable "~/zls/zls")
+(add-hook 'zig-mode-hook #'lsp)
+(eval-after-load "zig-mode"
+  '(define-key zig-mode-map (kbd "M-.") 'lsp-find-definition))
 
