@@ -1,0 +1,57 @@
+import pathlib
+import itertools
+import torchvision
+
+def parse_line(line):
+    """Parse a line in the format of bboxes.data.
+    
+    Expecting format `filename x0 y0 x1 y1`
+
+    Returns nested tuple (filename, (x0, y0, x1, y1)) where xi yi are ints
+    """
+    tokenized = line.split(" ")
+    filename = tokenized[0]
+    bbox = tuple(int(d) for d in tokenized[1:])
+    return (filename, bbox)
+
+class BoltChargePortDatset:
+    def __init__(self, root_dir = None):
+        # if root dir is not supplied, use the directory of this .py file
+        self.root_dir = root_dir or pathlib.Path(__file__).parent.resolve()
+        self.root_dir = pathlib.Path(self.root_dir) # if path is user supplied, make sure it's a Path object
+        self.bbox_data_path = self.root_dir / "bboxes.data"
+        self.labels = []
+
+    def ingest_labels(self):
+        with open(self.bbox_data_path, "r") as f:
+            lines = (line for line in f.readlines())
+            tokenized = (line.split(" ") for line in lines)
+            parsed = (parse_line(line) for line in lines)
+            groups = itertools.groupby(parsed, lambda kvp: kvp[0]) # group by filename, assumes sorted by filename
+            for filename, group in groups:
+                group_bboxes = tuple(kvp[1] for kvp in group)
+                self.labels.append((filename, group_bboxes))
+
+    def __getitem__(self, idx):
+        filename, bboxes = self.labels[idx]
+        image_path = pathlib.Path(filename) / filename
+        image = torchvision.io.read_image(filename, mode=torchvision.io.image.ImageReadMode.RGB)
+
+        # dummy labels vector for now
+        labels = tuple(1 for _ in range(len(bboxes)))
+
+        return image, bboxes, labels
+
+    def __len__(self):
+        return len(self.labels)
+
+if __name__ == "__main__":
+    bcdataset = BoltChargePortDatset()
+    bcdataset.ingest_labels()
+    print(bcdataset.labels)
+    print(bcdataset[0])
+                    
+
+            
+
+    

@@ -1,0 +1,6 @@
+# -*- mode: snippet -*-
+# name: #ifndef XXX; #define XXX; #endif
+# key: once
+# --
+
+#pragma once

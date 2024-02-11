@@ -1,0 +1,16 @@
+# add xxx_appears columns because the auto-labeling procedure
+# may have added labels that are not deducible from the data
+# and we don't want those cases to polute the samples
+# but we do want to maintain the labels in case future
+# re-processing can make the label appear in the data
+
+input_version = 4
+output_version = 5
+
+def up(conn):
+    conn.cursor().execute(
+        """
+        alter table samples
+        add column final integer;
+        """
+    )

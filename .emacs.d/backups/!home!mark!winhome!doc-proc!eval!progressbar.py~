@@ -1,0 +1,17 @@
+def progressbar(txt, curr, total, width=40):
+    if total == 0:
+        return
+
+    if curr == total:
+        print() # print newline
+        return
+
+    percent = curr/total
+    progress_string_len = int(percent*width)
+    progress_string = '■'*progress_string_len
+    remaining = '-'*(width - progress_string_len)
+
+    sys.stdout.write(f'\r{txt} '  + progress_string + remaining + f" {curr}/{total} {int(percent*100)}%")
+    sys.stdout.flush()
+
+

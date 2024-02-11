@@ -1,0 +1,4 @@
+Host csogit
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/cso_key

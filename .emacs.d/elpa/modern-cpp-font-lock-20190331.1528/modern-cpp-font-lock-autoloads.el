@@ -1,13 +1,10 @@
 ;;; modern-cpp-font-lock-autoloads.el --- automatically extracted autoloads
 ;;
 ;;; Code:
-
-(add-to-list 'load-path (directory-file-name
-                         (or (file-name-directory #$) (car load-path))))
-
+(add-to-list 'load-path (directory-file-name (or (file-name-directory #$) (car load-path))))
 
 ;;;### (autoloads nil "modern-cpp-font-lock" "modern-cpp-font-lock.el"
-;;;;;;  (0 0 0 0))
+;;;;;;  (23892 58133 574550 700000))
 ;;; Generated autoloads from modern-cpp-font-lock.el
 
 (autoload 'modern-c++-font-lock-mode "modern-cpp-font-lock" "\
@@ -37,14 +34,11 @@ See `modern-c++-font-lock-mode' for more information on Modern-C++-Font-Lock mod
 
 \(fn &optional ARG)" t nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "modern-cpp-font-lock" '("modern-c++-")))
-
 ;;;***
 
 ;; Local Variables:
 ;; version-control: never
 ;; no-byte-compile: t
 ;; no-update-autoloads: t
-;; coding: utf-8
 ;; End:
 ;;; modern-cpp-font-lock-autoloads.el ends here

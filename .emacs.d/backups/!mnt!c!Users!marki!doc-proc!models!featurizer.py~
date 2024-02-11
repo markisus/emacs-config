@@ -1,0 +1,190 @@
+from PIL import Image
+from collections import namedtuple
+import enchant
+from io import BytesIO
+import base64
+import hashlib
+import os
+import pdf2image
+import pytesseract
+import xml.etree.ElementTree as ET
+import json
+
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+ench = enchant.Dict("en_US")
+
+FeaturizedWord = namedtuple("FeaturizedWord", ["word", "left", "top", "right", "bottom", "conf"])
+
+def featurize_hocr(hocr, image_shape):
+    featurized = []
+    
+    tree = ET.ElementTree(ET.fromstring(hocr))
+    root = tree.getroot()
+    for el in root.iter():
+        if el.attrib.get('class', None) != 'ocrx_word':
+            continue
+        if not el.text.strip():
+            continue
+
+        info = el.attrib['title']
+        bbox_txt, conf_txt = info.split(";")
+        bbox = [int(d) for d in bbox_txt.lstrip("bbox ").split(" ")]
+        bbox[0] /= image_shape[0] # word left / page width
+        bbox[2] /= image_shape[0] # word right / page width
+        bbox[1] /= image_shape[1] # word top / page height
+        bbox[3] /= image_shape[1] # word bottom / page heigth
+
+        for i in range(len(bbox)):
+            bbox[i] = round(bbox[i], 2)
+        
+        conf = int(conf_txt.lstrip("x_wconf "))
+        word = el.text.lower()
+
+        featurized.append(FeaturizedWord(
+            word=word,
+            left=bbox[0],
+            top=bbox[1],
+            right=bbox[2],
+            bottom=bbox[3],
+            conf=conf))
+
+    return featurized
+    
+def autorotated_features(image):
+    most_english_words = 0
+    best_features = []
+    best_rotation = 0
+    best_image = None
+
+    for i in range(4):
+        rotated_image = image.rotate(90*i)
+        rotated_hocr = str(pytesseract.image_to_pdf_or_hocr(rotated_image, extension='hocr'), 'utf-8')
+        rotated_features = featurize_hocr(rotated_hocr, image_shape=image.size)
+
+        num_english_words = sum(ench.check(feat.word) for feat in rotated_features)
+        total_conf = sum(feat.conf for feat in rotated_features) # todo: use conf in heuristic
+
+        if num_english_words > most_english_words:
+            most_english_words = num_english_words
+            best_features = rotated_features
+            best_rotation = i
+            best_image = rotated_image
+
+        if i == 0 and (num_english_words / len(rotated_features) + 1) >= 0.65:
+            break
+
+    return {
+        'features': best_features,
+        'txt': " ".join(f.word for f in best_features),
+        'rotation': best_rotation,
+        'image': best_image
+    }
+
+def featurize_document(file_data, file_type):
+    num_images = 3 # only take first 3 pg
+    if file_type == ".pdf":
+        images = pdf2image.convert_from_bytes(file_data, fmt="png", dpi=400, thread_count=5)[:num_images]
+    elif file_type in [".tif", ".tiff"]:
+        images = []
+        im = PIL.Image.open(BytesIO(file_data))
+        for i, page in enumerate(PIL.ImageSequence.Iterator(im)):
+            if i >= num_images:
+                break
+            images.append(page.copy())
+    else:
+        raise RuntimeError(f"Cannot process file type {file_type}")
+
+    # process - with auto rotate
+    featurized_images = [autorotated_features(image) for image in images]
+
+    image_shapes = [f["image"].size for f in featurized_images]
+    images_base64 = [convert_png_to_base64(f["image"]) for f in featurized_images]
+    txt = "@#".join(f["txt"] for f in featurized_images)
+    features = [f['features'] for f in featurized_images]
+
+    image_meta = [
+        {'rotation': f['rotation'], 'shape': f['image'].size } for f in featurized_images
+    ]
+    
+    return {
+        "images": images_base64,
+        "image_meta": image_meta,
+        "txt": txt,
+        "features": features
+    }
+
+def create_training_records_db():
+    sql = """
+    CREATE TABLE IF NOT EXISTS samples(
+    md5 TEXT PRIMARY KEY,
+    txt TEXT,
+    features TEXT,
+    doc_type INTEGER,
+    first_name TEXT,
+    first_name_appears INTEGER,
+    last_name TEXT,
+    last_name_appears INTEGER,
+    dob_m INTEGER,
+    dob_d INTEGER,
+    dob_y INTEGER,
+    dob_appears INTEGER,
+    dos_m INTEGER,
+    dos_d INTEGER,
+    dos_y INTEGER,
+    dos_appears INTEGER,
+    doa_m INTEGER,
+    doa_d INTEGER,
+    doa_y INTEGER,
+    doa appears INTEGER,
+    train INTEGER
+    );"""
+
+    sql2 = """
+    CREATE TABLE IF NOT EXISTS file_data(
+    md5 TEXT PRIMARY KEY,
+    data BLOB
+    )
+
+    """
+    sql3 = """
+    CREATE TABLE IF NOT EXISTS file_data(
+    md5 TEXT PRIMARY KEY,
+    data BLOB
+    )
+    """
+
+
+if __name__ == "__main__":
+    print("Hello world")
+
+    filename = r"C:\Users\marki\Desktop\samples\test.pdf"
+
+    with open(filename, 'rb') as f:
+        name, extension = os.path.splitext(filename)
+        md5 = hashlib.md5(f.read()).hexdigest()
+
+        f.seek(0)
+        result = preprocess_document(f.read(), extension.lower())
+
+        print(md5)
+
+        print("FEATURES =============")
+        print(result["features"])
+
+        print("TXT =============")
+        print(result["txt"])
+
+        print("META =============")
+        print(result["image_meta"])
+
+        print("JSON==============")
+        print(json.dumps(result))
+
+        # # only use first 3 pages
+        # first_3_images = itertools.islice(images, 3)
+
+        # # txt = get_ocr_text(first_3_images)
+        # txt = autorotate_ocr(first_3_images)
+        # dest = "files\\"+str(md5)+extension
+        # sample = (md5, txt, extension)
+        # print(sample)

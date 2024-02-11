@@ -1,0 +1,12 @@
+import os
+import cv2 as cv
+import numpy as np
+
+# use realsense factory matrix
+mtx = np.array([
+    [906.400451660156,0,                645.855102539062],
+    [0,               906.400451660156, 353.716766357422],
+    [0,               0,                               1]
+])
+
+

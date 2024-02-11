@@ -1,0 +1,6 @@
+# -*- mode: snippet -*-
+# name: quote-list-newline
+# key: ",n
+# --
+"$1",
+${2:"",}$0

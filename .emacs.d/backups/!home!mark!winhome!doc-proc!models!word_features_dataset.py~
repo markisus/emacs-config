@@ -1,0 +1,23 @@
+from torch.utils.data import Dataset
+from labels.database import label_db_path
+
+class WordFeaturesDataset(Dataset):
+    def __init__(self train, augment = False, on_progress=None, attach_md5s = False):
+        self.train = train
+
+        test_train = 1 if self.train else 0
+
+        conn = sqlite3.connect(labels.paths.label_db_path)
+        rows = conn.cursor().execute("""
+        select 
+        md5, word_features, first_name, last_name, 
+        dob_m, dob_d, dob_y, 
+        dos_m, dos_d, dos_y, 
+        doa_m, doa_d, doa_y
+
+        from labels
+
+        where test_train = ?
+        order by random()
+        """)
+

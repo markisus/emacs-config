@@ -1,0 +1,16 @@
+import open3d as o3d
+import numpy as np
+from localization import guess_body_coordinate_frame
+
+d = o3d.io.read_triangle_mesh("door_handle.ply")
+d_cropped = o3d.io.read_triangle_mesh("door_handle_cropped.ply")
+
+d_pts = d.sample_points_uniformly(10000)
+dcropped_pts = d_cropped.sample_points_uniformly(2500)
+
+body_coordinates = guess_body_coordinate_frame(dcropped_pts)
+body_coordinates_viz = o3d.geometry.TriangleMesh().create_coordinate_frame(0.01)
+
+o3d.visualization.draw_geometries([d_pts, dcropped_pts, body_coordinates_viz])
+
+

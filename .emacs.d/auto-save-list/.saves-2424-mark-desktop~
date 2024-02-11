@@ -1,0 +1,16 @@
+/home/mark/winhome/doc-proc/backend_server/server.py
+/home/mark/winhome/doc-proc/backend_server/#server.py#
+/home/mark/winhome/doc-proc/backend_server/api.py
+/home/mark/winhome/doc-proc/backend_server/#api.py#
+/home/mark/winhome/doc-proc/config/cherrypy_dev.conf
+/home/mark/winhome/doc-proc/config/#cherrypy_dev.conf#
+/home/mark/winhome/doc-proc/backend_server/jwtauth.py
+/home/mark/winhome/doc-proc/backend_server/#jwtauth.py#
+/home/mark/winhome/doc-proc/config/cherrypy_prod.conf
+/home/mark/winhome/doc-proc/config/#cherrypy_prod.conf#
+/home/mark/winhome/doc-proc/config/paths.py
+/home/mark/winhome/doc-proc/config/#paths.py#
+/home/mark/winhome/doc-proc/ocr.py
+/home/mark/winhome/doc-proc/#ocr.py#
+/home/mark/winhome/doc-proc/backend_server/cherry.py
+/home/mark/winhome/doc-proc/backend_server/#cherry.py#

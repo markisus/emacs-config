@@ -1,0 +1,39 @@
+import argparse
+import sqlite3
+from database import database
+
+parser = argparse.ArgumentParser(description="Clean rows in records.db where patient name does not appear")
+parser.add_argument("--dry-run", help="Show what would be cleaned but do not commit to db", action="store_true", default=False)
+parser.add_argument("--db", help="Path to db", default=database.get_db_path())
+
+args = parser.parse_args()
+
+conn = sqlite3.connect(args.db)
+c = conn.cursor()
+
+rows = c.execute("select md5, txt, first_name, last_name, dob_m, dob_d, dob_y, dos_m, dos_d, dos_y, doa_m, doa_d, doa_y from samples")
+
+total_docs = 0
+bad_md5s = []
+
+for row in rows:
+    total_docs += 1
+    (md5, txt, first_name, last_name, dob_m, dob_d, dob_y, dos_m, dos_d, dos_y, doa_m, doa_d, doa_y) = row
+
+
+    txt = txt.lower().replace("newline", "") # not 
+    lname, fname = [n.strip().lower() for n in patient_name.split(",")]
+    if lname not in txt and fname not in txt:
+        bad_md5s.append(md5)
+        
+print("# bad md5s ", len(bad_md5s), " of ", total_docs)
+print("\n".join(bad_md5s))
+
+if not args.dry_run:
+    vals = (f'"{m}"' for m in bad_md5s)
+    cmd = f'update samples set gibberish = 1 where md5 in ({",".join(vals)})'
+    res = c.execute(cmd)
+    conn.commit()
+    print(f"Set gibberish column to 1 for {len(bad_md5s)} rows where patient name did not appear")
+
+conn.close()

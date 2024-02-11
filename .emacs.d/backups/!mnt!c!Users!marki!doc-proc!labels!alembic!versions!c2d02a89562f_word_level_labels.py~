@@ -1,0 +1,24 @@
+"""word-level-labels
+
+Revision ID: c2d02a89562f
+Revises: e94c3bc6076c
+Create Date: 2021-04-14 12:40:26.196442
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision = 'c2d02a89562f'
+down_revision = 'e94c3bc6076c'
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    pass
+
+
+def downgrade():
+    pass

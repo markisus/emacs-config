@@ -1,0 +1,467 @@
+#!/usr/bin/python3.8
+
+import sys_path_hack
+
+import cv2
+import numpy as np
+import math
+import imgui
+from imgui_sdl_wrapper.imgui_sdl_wrapper import ImguiSdlWrapper
+from pyimgui_overlayable.overlayable import *
+import paths
+import os
+
+def SE3_inv(SE3):
+    """invert a 4x4 pose matrix"""
+    # public domain snippet courtesy pytagmapper project
+    # https://github.com/markisus/pytagmapper/blob/77bbbed3bace7c3945caf681fa38e9e56be9d6fe/pytagmapper/geometry.py#L166
+    result = np.empty((4,4))
+    result[:3,:3] = SE3[:3,:3].T
+    result[:3,3:4] = -SE3[:3,:3].T @ SE3[:3,3:4]
+    result[3,:] = [0, 0, 0, 1]
+    return result
+
+def se3_exp(se3):
+    # public domain snippet courtesy pytagmapper project
+    # https://github.com/markisus/pytagmapper/blob/77bbbed3bace7c3945caf681fa38e9e56be9d6fe/pytagmapper/geometry.py#L95    
+    # See page 10 https://ethaneade.com/lie.pdf
+    # we reverse u and omega in the ordering of se3
+    result = np.eye(4)
+    omega_vec = se3[:3,:]
+    theta_squared = np.dot(omega_vec.T, omega_vec)
+    omega = so3_to_matrix(omega_vec)
+    if (theta_squared < 1e-8): 
+        # second order taylor expansion
+        A = -theta_squared/6.0 + 1.0
+        B = -theta_squared/24.0 + 0.5
+        C = -theta_squared/120.0 + (1.0/6.0)
+    else:
+        theta = math.sqrt(theta_squared)
+        stheta = math.sin(theta)
+        ctheta = math.cos(theta)
+        A = stheta / theta
+        B = (-ctheta + 1.0) / theta_squared
+        C = (-A + 1.0) / theta_squared
+
+    omega_squared = omega @ omega
+    v = se3[3:,:]
+
+    result[:3,:3] += omega*A + omega_squared*B
+    result[:3,3:4] = ((omega*B + omega_squared*C) @ v) + v
+    return result
+
+def make_bbox_vertices(left, top, right, bottom):
+    """
+    make 2d vertices traveling around a rectangle
+    suitable for rendering as line list
+    """
+    return np.array([[left, top],
+                     [right, top],
+                     [right, bottom],
+                     [left, bottom],
+                     [left, top],
+                     ]).T
+
+
+
+def get_circle_vertices_3d(radius, num_vertices):
+    vertices = np.empty((4, num_vertices))
+    vertices[2,:] = 0
+    vertices[3,:] = 1
+
+    angle = 2 * math.pi / num_vertices
+    rotator = math.cos(angle) + 1j * math.sin(angle)
+    current = 1.0 + 0j
+
+    for i in range(num_vertices):
+        vertices[0,i] = current.real * radius
+        vertices[1,i] = current.imag * radius
+        current *= rotator
+
+    return vertices
+
+def load_kp_model(keypoint_data_path):
+    keypoint_model = np.zeros((4,8))
+    keypoint_model[3,:] = 1
+    with open(keypoint_data_path, "r") as f:
+        for i, line in enumerate(f.readlines()):
+            xy = [float(s.strip()) for s in line.split()]
+            keypoint_model[0,i] = xy[0] / 1000 # mm => m
+            keypoint_model[1,i] = xy[1] / 1000 # mm => m
+    return keypoint_model
+
+def overlay_cross(overlayable, x, y, length, colors, thickness):
+    cross_array = np.empty(shape=(2,4))
+
+    # horizontal cross
+    cross_array[:,0] = [x - length, y]
+    cross_array[:,1] = [x + length, y]
+
+    # vertical cross
+    cross_array[:,2] = [x, y - length]
+    cross_array[:,3] = [x, y + length]
+
+    overlay_line_list(overlayable,
+                      cross_array,
+                      colors,
+                      thickness)
+
+def project_keypoints(camera_matrix, tx_camera_bcp, keypoint_model):
+    projected_kps = camera_matrix @ (tx_camera_bcp @ keypoint_model)[:3,:]
+    projected_kps /= projected_kps[2,:]
+    projected_kps = projected_kps[:2,:]
+    return projected_kps
+
+def project_ortho(camera_matrix, tx_camera_bcp, keypoint_model):
+    ortho_matrix = np.zeros(shape=(3,4))
+    ortho_matrix[:,:2] = camera_matrix[:,:2]
+    ortho_matrix[:,3] = camera_matrix[:,3]
+    
+    projected_kps = camera_matrix @ (tx_camera_bcp @ keypoint_model)[:3,:]
+    projected_kps /= projected_kps[2,:]
+    projected_kps = projected_kps[:2,:]
+    return projected_kps
+
+
+
+def get_homing_error(projected_kps, home_kps):
+    pixel_diffs = projected_kps - home_kps
+    pixel_errors = np.linalg.norm(pixel_diffs, axis=0)
+    pixel_homing_error = np.mean(pixel_errors).flatten()[0]**2
+    return pixel_homing_error
+
+def get_control_signal(camera_matrix, tx_camera_object, keypoint_model, home_kps):
+    """returns a perturbation in [yaw, x, y, z] that will move the keypoints closer to home
+    """
+    
+    # where are the keypoints now?
+    projected_kps = project_keypoints(camera_matrix, tx_camera_object, keypoint_model)
+    homing_error = get_homing_error(projected_kps, home_kps)
+    epsilon = 1e-4
+
+    # where would they be under yaw perturbation?
+    cyaw = math.cos(epsilon)
+    syaw = math.sin(epsilon)
+    epsilon_rotation = np.array([
+        [ cyaw, 0, syaw],
+        [    0, 1,    0],
+        [-syaw, 0, cyaw]
+    ])
+    tx_delta = np.eye(4)
+    tx_delta[:3,:3] = epsilon_rotation
+    tx_camera_object_yawed = tx_delta @ tx_camera_object
+    projected_kps_yawed = project_keypoints(camera_matrix, tx_camera_object_yawed, keypoint_model)
+    homing_error_yawed = get_homing_error(projected_kps_yawed, home_kps)
+
+    # where would they be, moving camera along its x axis
+    tx_camera_object_xed = tx_camera_object.copy()
+    tx_camera_object_xed[0,3] -= epsilon
+    projected_kps_xed = project_keypoints(camera_matrix, tx_camera_object_xed, keypoint_model)
+    homing_error_xed = get_homing_error(projected_kps_xed, home_kps)
+    dhoming_error__dx = (homing_error_xed - homing_error) / epsilon
+    
+    # where would they be, moving camera along its y axis
+    tx_camera_object_yed = tx_camera_object.copy()
+    tx_camera_object_yed[1,3] -= epsilon
+    projected_kps_yed = project_keypoints(camera_matrix, tx_camera_object_yed, keypoint_model)
+    homing_error_yed = get_homing_error(projected_kps_yed, home_kps)
+    dhoming_error__dy = (homing_error_yed - homing_error) / epsilon
+
+    # where would they be, moving camera along its z axis
+    tx_camera_object_zed = tx_camera_object.copy()
+    tx_camera_object_zed[2,3] -= epsilon
+    projected_kps_zed = project_keypoints(camera_matrix, tx_camera_object_zed, keypoint_model)
+    homing_error_zed = get_homing_error(projected_kps_zed, home_kps)
+    dhoming_error__dz = (homing_error_zed - homing_error) / epsilon
+
+    homing_error_derivs = np.array([homing_error_yawed, homing_error_xed, homing_error_yed, homing_error_zed])
+    homing_error_derivs -= homing_error * np.ones((4,))
+    homing_error_derivs /= epsilon
+
+    deriv_norm = np.linalg.norm(homing_error_derivs).flatten()[0]
+    control_signal = homing_error_derivs / deriv_norm * homing_error**0.5
+
+    # in a linear world, moving by [control_signal] will zero the error
+    return control_signal
+    
+def main():
+    np.set_printoptions(precision=3, suppress=True)
+
+    keypoint_data_path = os.path.join(paths.DATASET_DIR, "keypoint_coords.txt")
+    keypoint_model = load_kp_model(keypoint_data_path)
+
+    video_width = 1280
+    video_height = 720
+
+    # a typical camera matrix corresp. to the above dimensions
+    # for the realsense 435i
+    camera_matrix = np.array([[1366.432, 0, video_width/2],
+                              [0, 1365.847, video_height/2],
+                              [0, 0, 1]])
+
+    init_tx_camera_bcp  = np.array([[1,  0,  0, 0],
+                                    [0, -1,  0, 0],
+                                    [0,  0, -1, 0.2],
+                                    [0,  0,  0, 1]], dtype=np.float64)
+
+    init_yaw = math.pi/4
+    init_rot, _ = cv2.Rodrigues(np.array([0, init_yaw, 0]))
+    init_tx_camera_bcp[:3,:3] = init_tx_camera_bcp[:3,:3] @ init_rot
+
+    # this is the camera that is supposedly mounted on the end effector
+    tx_camera_bcp = init_tx_camera_bcp.copy()
+
+    # now create a virtual camera to view the scene from topdown
+    td_width = 1200
+    td_height = 1000
+    f = td_width/0.5
+    tdcam_matrix = np.array([
+        [f,        0,       td_width/2],
+        [0,        f,  td_height * 0.1],
+        [0,        0,                1]
+    ], dtype=np.float64)
+
+    tx_tdcam_bcp = np.array([
+        [1,  0, 0,    0],
+        [0,  0, 1,    0],
+        [0, -1, 0,    1],
+        [0,  0, 0,    1]
+    ], dtype=np.float64)
+
+    OUTER_CIRCLE_RADIUS = 16.39 / 1000
+    NUM_CIRCLE_VERTICES = 30
+    bcp_outer_circle = get_circle_vertices_3d(OUTER_CIRCLE_RADIUS, NUM_CIRCLE_VERTICES)
+
+    # a triangle polyline (homog coordinates) representing
+    # the virtual camera when seen from top down view
+    camera_triangle = np.array([
+        [-1, 1, 0, -1],
+        [ 0, 0, 0,  0],
+        [ 0, 0, 3,  0],
+        [ 1, 1, 1,  1]
+    ], dtype=np.float64)
+    camera_triangle[:3,:] *= 0.01
+
+    # add the outer circle to the keypoints
+    # keypoint_model = np.hstack((keypoint_model, bcp_outer_circle))
+    num_keypoints = keypoint_model.shape[1]
+
+    app = ImguiSdlWrapper("Increased Keypoints Simulation", int(1280*1.2), int(720*1.2))
+
+    imgui_red = imgui.get_color_u32_rgba(1,0,0,1)
+    imgui_green = imgui.get_color_u32_rgba(0,1,0,1)
+    imgui_blue = imgui.get_color_u32_rgba(0,0,1,1)
+    imgui_white = imgui.get_color_u32_rgba(1,1,1,1)
+    imgui_white_transparent = imgui.get_color_u32_rgba(1,1,1,0.4)
+    imgui_yellow = imgui.get_color_u32_rgba(1,1,0,1)
+
+    imgui_colors = [
+        imgui_red,
+        imgui_green,
+        imgui_blue,
+        imgui_yellow
+    ]
+
+    goal_zone_px_tol = 5
+
+    yaw_ctrl = 0
+    roll_ctrl = 0
+    pitch_ctrl = 0
+
+    x_ctrl = 0
+    y_ctrl = 0
+    z_ctrl = 0
+    
+    goal_kps = camera_matrix @ (tx_camera_bcp @ keypoint_model)[:3,:]
+    goal_kps /= goal_kps[2,:]
+    goal_kps = goal_kps[:2,:]
+    goal_outer_circle = project_keypoints(camera_matrix, tx_camera_bcp, bcp_outer_circle)
+    
+    td_outer_circle = project_keypoints(tdcam_matrix, tx_tdcam_bcp, bcp_outer_circle)
+    
+    prop_tol = 0.9
+    jitter = False
+    seek = False
+    seek_once = False
+
+    txs_camera_bcp = [init_tx_camera_bcp.copy()]
+
+    while app.running:
+        ANGLE_DIV_POW = 0
+        ANGLE_DIV = 10**ANGLE_DIV_POW
+        yaw = yaw_ctrl/ANGLE_DIV
+        roll = roll_ctrl/ANGLE_DIV
+        pitch = pitch_ctrl/ANGLE_DIV
+
+        TRANS_DIV_POW = 0
+        TRANS_DIV = 10**TRANS_DIV_POW
+        x = x_ctrl/TRANS_DIV
+        y = y_ctrl/TRANS_DIV
+        z = z_ctrl/TRANS_DIV
+        
+        camera_rot, _ = cv2.Rodrigues(np.array([pitch, yaw, roll], dtype=np.float64))
+        tx_camera__camera_perturb = np.eye(4, dtype=np.float64)
+        tx_camera__camera_perturb[:3,:3] = camera_rot
+        tx_camera__camera_perturb[:3,3] = [-x, -y, -z]
+
+        txs_camera_bcp[-1] = SE3_inv(tx_camera__camera_perturb) @ init_tx_camera_bcp
+        tx_camera_bcp = txs_camera_bcp[-1]
+
+        tx_tdcam_cam = tx_tdcam_bcp @ SE3_inv(tx_camera_bcp)
+        td_projected_cam = project_keypoints(tdcam_matrix, tx_tdcam_cam, camera_triangle)
+
+        txs_tdcam_cam = [tx_tdcam_bcp @ SE3_inv(tx_camera_bcp) for tx_camera_bcp in txs_camera_bcp]
+        td_projected_cams = [project_keypoints(tdcam_matrix, tx_tdcam_cam, camera_triangle) for tx_tdcam_cam in txs_tdcam_cam]
+        
+        projected_kps = project_keypoints(camera_matrix, tx_camera_bcp, keypoint_model)
+        projected_circle = project_keypoints(camera_matrix, tx_camera_bcp, bcp_outer_circle)
+
+        # sample kp jitters
+        kp_jitters = np.zeros(shape=(2,num_keypoints))
+        if jitter:
+            for i in range(num_keypoints):
+                kp_jitters[0,i] = np.random.normal(loc=0, scale=2)
+                kp_jitters[1,i] = np.random.normal(loc=0, scale=2)
+
+        projected_kps += kp_jitters
+
+        control_signal = get_control_signal(camera_matrix, tx_camera_bcp, keypoint_model, goal_kps).flatten()
+
+        # project keypoints into image
+        pixel_diffs = projected_kps - goal_kps
+        pixel_errors = np.linalg.norm(pixel_diffs, axis=0)
+
+        num_in_goal = 0
+        for i in range(num_keypoints):
+            if pixel_errors[i] <= goal_zone_px_tol:
+                num_in_goal += 1
+
+        in_goal = num_in_goal >= prop_tol * num_keypoints
+
+        ctrl_scale = 0.5
+        max_move = 1e-3 * 0.2
+        if (seek or seek_once) and not in_goal:
+            # apply the control signal, fixing yaw and optimizing x and z
+            x_perturb = control_signal[1] * ctrl_scale
+            z_perturb = control_signal[3] * ctrl_scale
+
+            if abs(x_perturb) >= max_move:
+                scale = max_move/abs(x_perturb)
+                x_perturb *= scale
+                z_perturb *= scale
+
+            if abs(z_perturb) >= max_move:
+                scale = max_move/abs(z_perturb)
+                x_perturb *= scale
+                z_perturb *= scale
+
+            # print(f"moving {x_perturb} {z_perturb}")
+
+            x_ctrl += x_perturb*TRANS_DIV
+            z_ctrl += z_perturb*TRANS_DIV
+        
+        app.main_loop_begin()
+        
+        imgui.begin("info")
+        _, goal_zone_px_tol = imgui.slider_int("goal zone radius (px)", goal_zone_px_tol, 1, 10)
+        _, yaw_ctrl = imgui.slider_float("yaw", yaw_ctrl, -math.pi/1.5, math.pi/1.5)
+        # _, roll_ctrl = imgui.slider_float("roll", roll_ctrl, -math.pi/3, math.pi/3)
+        # _, pitch_ctrl = imgui.slider_float("pitch", pitch_ctrl, -math.pi/3, math.pi/3)
+        _, x_ctrl = imgui.slider_float("x", x_ctrl, -0.5, 0.5)
+        # _, y_ctrl = imgui.slider_float("y", y_ctrl, -0.1, 0.1)
+        _, z_ctrl = imgui.slider_float("z", z_ctrl, -0.5, 0.5)
+        # _, prop_tol = imgui.slider_float("proportion tol", prop_tol, 0.5, 0.99)
+        _, seek = imgui.checkbox("seek", seek)
+        # seek_once = imgui.button("seek once")
+
+        # imgui.text(f"roll (deg) {roll*180/math.pi}")
+        # imgui.text(f"pitch (deg {pitch*180/math.pi}")
+        # imgui.text(f"control signal {control_signal}")
+
+        if imgui.button("save"):
+            txs_camera_bcp.append(tx_camera_bcp.copy())
+        
+        imgui.end()
+
+        imgui.begin("simulated camera image")
+        imgui.text(f"yaw (deg) {yaw*180/math.pi}")
+        imgui.text(f"distance (m) {np.linalg.norm(tx_camera_bcp[:3,3]).flatten()[0]}")
+        imgui.text(f"xyz (m) {SE3_inv(tx_camera_bcp)[:3,3].flatten()}")
+        
+        display_width = imgui.get_window_width() - 30
+        overlayable = draw_overlayable_rectangle(video_width, video_height,
+                                                 display_width,
+                                                 border_color=imgui_red)
+
+        for i in range(num_keypoints):
+            # the projections
+            cross_color = imgui_white
+            if not in_goal:
+                cross_color = imgui_red
+            overlay_cross(overlayable,
+                          projected_kps[0,i],
+                          projected_kps[1,i],
+                          3,
+                          [cross_color],
+                          1.0)
+
+            # the outer circle
+            overlay_polyline(
+                overlayable,
+                projected_circle[:2,:],
+                [cross_color],
+                1
+            )
+
+            # the goal circles
+            overlay_circle(overlayable,
+                           goal_kps[0,i],
+                           goal_kps[1,i],
+                           goal_zone_px_tol,
+                           imgui_white,
+                           1.0)
+
+            # the goal outer circle
+            overlay_line_list(
+                overlayable,
+                goal_outer_circle[:2,:],
+                [imgui_white],
+                1
+            )
+
+        imgui.end()
+
+        imgui.begin("topdown")
+        display_width = imgui.get_window_width() - 30
+        overlayable = draw_overlayable_rectangle(td_width,
+                                                 td_height,
+                                                 display_width,
+                                                 border_color=imgui_red)
+
+        # the virtual end effector cameras
+        for i, td_projected_cam in enumerate(td_projected_cams):
+            color = imgui_white
+            if i == len(td_projected_cams) - 1:
+                color = cross_color
+            overlay_polyline(
+                overlayable,
+                td_projected_cam[:2,:],
+                [color],
+                1
+            )
+        
+        # the goal outer circle
+        overlay_line_list(
+            overlayable,
+            td_outer_circle[:2,:],
+            [imgui_white],
+            1
+        )
+        
+        imgui.end()
+
+        app.main_loop_end()
+    app.destroy()
+
+if __name__ == "__main__":
+    main()

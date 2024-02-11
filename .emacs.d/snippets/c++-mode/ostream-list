@@ -1,0 +1,5 @@
+# -*- mode: snippet -*-
+# name: ostream-list
+# key: <<
+# --
+<< $1 <<$0

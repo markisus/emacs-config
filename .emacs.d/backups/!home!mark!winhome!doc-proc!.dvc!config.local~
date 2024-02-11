@@ -1,0 +1,4 @@
+['remote "gitlab.biro.ai"']
+    ask_password = true
+['remote "dvc_azure"']
+    connection_string = "DefaultEndpointsProtocol=https;AccountName=birodvc;AccountKey=IxNyuMH9dOkQup13CBWdXvJ1DPP+kEjYJVHXL9rLkTWx272B+kafVHVKoMDC+aipUEmeXHYvpbUbq/VWIOHtqw==;EndpointSuffix=core.windows.net"

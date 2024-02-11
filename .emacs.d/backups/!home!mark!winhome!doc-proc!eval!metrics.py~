@@ -1,0 +1,123 @@
+# 1. Load model
+# 2. Load OCR from database
+# 3. Get inferences from text
+# 4. Compare inferences to labels in database
+
+import onnxruntime as rt
+import os
+import pdf2image
+import pytesseract
+import sqlite3
+import json
+
+import util
+from transformers import DistilBertTokenizerFast
+from api import get_labels, get_ocr_data, get_inference_from_txt
+
+import sys
+
+def progressbar(curr, total, width=40):
+    if total == 0:
+        return
+
+    if curr == total:
+        print() # print newline
+        return
+
+    percent = curr/total
+    progress_string_len = int(percent*width)
+    progress_string = '■'*progress_string_len
+    remaining = '-'*(width - progress_string_len)
+
+    sys.stdout.write('\r' + progress_string + remaining + f" {curr}/{total} {int(percent*100)}%")
+    sys.stdout.flush()
+
+
+doc_types = util.load_doc_types()
+dir_path = os.path.dirname(os.path.realpath(__file__))
+bert_model_path = os.path.abspath(os.path.join(dir_path, '../models/bert_model.onnx'))
+scikit_model_path = os.path.abspath(os.path.join(dir_path, '../models/scikit_document_classifier.model'))
+
+def get_first(value) :
+    return value[0][0] if value else ""
+
+def get_labeled_md5s():
+    try:
+        conn = sqlite3.connect(util.get_db_path())
+        md5s = conn.cursor().execute(
+            """
+            select md5
+            from samples
+            where labeled = 1
+            """).fetchall()
+        conn.close()
+        return md5s
+    except:
+        raise KeyError(f"Error getting all labeled md5s")
+
+    return []
+
+def main():
+    metrics_categories = ["first_name", "last_name", "doc_type", "dob", "dos", "doa"]
+    metrics = {key: {"correct": 0, "total": 0, "no_inf": 0} for key in metrics_categories}
+    incorrect = {key: [] for key in metrics_categories}
+    data = get_labeled_md5s()
+
+    i = 0;
+
+    # Assumes all data has been pre-processed and is in the database
+    for md5 in data:
+        progressbar(i, len(data))
+        i += 1
+        txt = get_ocr_data(md5[0])["txt"]
+        inf = get_inference_from_txt(txt)
+        label = get_labels(md5[0])
+        inf_dict = {"first_name": get_first(inf["first_names"]),
+                    "last_name": get_first(inf["last_names"]),
+                    "dob": get_first(inf["dobs"]),
+                    "dos": get_first(inf["doss"]),
+                    "doa": get_first(inf["doas"]),
+                    "doc_type": get_first(inf["categories"])}
+
+        for cat in metrics_categories:
+            if label[cat] is None:
+                continue
+
+            metrics[cat]["total"] += 1
+
+            if inf_dict[cat] and label[cat].lower() == inf_dict[cat].lower():
+                metrics[cat]["correct"] += 1
+            else:
+                incorrect[cat].append((md5[0], label[cat], inf_dict[cat], inf["tokens"], inf["probs"]))
+                if not inf_dict[cat]:
+                    metrics[cat]["no_inf"] += 1
+
+    for cat in metrics_categories:
+        print("Category: ", cat)
+
+        for s in incorrect[cat]:
+            print ("md5: %s, label: %s, inf: %s" % (s[0], s[1], s[2]))
+            # tokens = s[3]
+            # probs = s[4]
+
+        correct = metrics[cat]["correct"]
+        no_inf = metrics[cat]["no_inf"]
+        total = metrics[cat]["total"]
+
+        metrics[cat]["correct_pct"] = correct/total
+        metrics[cat]["no_inf_pct"] = no_inf/total
+
+        print ("Number correct for %s: %d/%d (%f%%)" % (cat, correct, total, (100.0 * correct/total)))
+        print("----------------------")
+
+
+
+    metrics_json = json.dumps(metrics, indent = 4)
+    print (metrics_json)
+
+    with open("metrics.json", "w") as metrics_file:
+        json.dump(metrics, metrics_file)
+        print("Metrics written to metrics.json")
+
+if __name__ == "__main__":
+    main()

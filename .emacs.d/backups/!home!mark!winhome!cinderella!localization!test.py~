@@ -1,0 +1,4 @@
+from localization import DoorHandleModel
+
+model = DoorHandleModel()
+model.load()

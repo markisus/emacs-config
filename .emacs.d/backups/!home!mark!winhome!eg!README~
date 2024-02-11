@@ -1,0 +1,6 @@
+Reproduce error
+
+0. install pytorch, nodejs + onnxjs
+1. python save_model.py
+2. python -m transformers.convert_graph_to_onnx --model ./model --framework pt --tokenizer distilbert-base-uncased onnx/out.onnx
+3. 

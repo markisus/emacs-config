@@ -1,0 +1,39 @@
+import dlib
+import csv
+
+paths = ["a_Color.png", "b_Color.png"]
+
+with open("door_handles_csv.csv", "r") as f:
+    labels = csv.DictReader(f)
+    for l in labels:
+        filename = l['filename']
+        paths.append(filename)
+
+
+
+detector = dlib.simple_object_detector("door_handle_detector.svm")
+win_det = dlib.image_window()
+win_det.set_image(detector)
+
+print("Showing detections on the images in the faces folder...")
+win = dlib.image_window()
+for f in paths:
+    print("Processing file: {}".format(f))
+    img = dlib.load_rgb_image(f)
+    dets = detector(img)
+    print("Number of faces detected: {}".format(len(dets)))
+    for k, d in enumerate(dets):
+        print("Detection {}: Left: {} Top: {} Right: {} Bottom: {}".format(
+            k, d.left(), d.top(), d.right(), d.bottom()))
+
+    win.clear_overlay()
+    win.set_image(img)
+    win.add_overlay(dets)
+    dlib.hit_enter_to_continue()
+
+
+
+
+
+        
+

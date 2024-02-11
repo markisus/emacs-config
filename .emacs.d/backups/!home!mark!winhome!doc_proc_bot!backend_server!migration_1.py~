@@ -1,0 +1,14 @@
+# add columns
+#   image_shapes: json list of [w,h]
+#   hocrs: json list of str, 
+
+input_version = 0
+output_version = 1
+
+def up(conn):
+    conn.cursor().execute(
+        """
+        alter table samples
+        add column images text;
+        """
+    )

@@ -1,0 +1,127 @@
+#!/usr/bin/python3.8
+
+import argparse
+from robodk.robomath import Mat
+from robodk.robolink import Robolink, ITEM_TYPE_FRAME, ITEM_TYPE_ROBOT, Pose
+import open3d as o3d
+import numpy as np
+import math
+import scipy.linalg
+import cv2
+import logger
+    
+from simulation.sim_config import SimConfig, DOOR_SEEK_PATH
+from camera.simulated_camera import SimulatedCamera, DEFAULT_SIM_CONFIG_MEDIUM
+from camera.realsense import RealsenseCamera, DEFAULT_RS_CONFIG_MEDIUM
+from localization.door_localization import DoorHandleLocalizer, DoorHandleModel
+
+def np_pose_to_robodk(np_pose):
+    robodk_pose = np_pose.copy()
+    # robodk expects the translation units to be mm
+    robodk_pose[:3, 3] *= 1000
+    return Mat(robodk_pose.tolist())
+
+np.set_printoptions(precision=3, suppress=True)
+
+import localization.door_localization
+localization.door_localization.DEBUG = False
+
+parser = argparse.ArgumentParser(description="Seek")
+args = parser.parse_args()
+log = logger.get()
+
+# set up the seek environment
+print("Loading the environment")
+config = SimConfig.parse_file(DOOR_SEEK_PATH)
+config.to_robodk()
+log.info("Loaded the environment")
+
+# Take the initial picture of the scene
+cam = RealsenseCamera(DEFAULT_RS_CONFIG_MEDIUM)
+
+# read a dummy frame just to get the intrinsics
+_, intrinsics = cam.read_rgbd()
+door_handle_model = DoorHandleModel.load()
+door_handle_model.flip() # use driver's side
+door_handle_localizer = DoorHandleLocalizer(model=door_handle_model,
+                                            depth_scale=cam.depth_scale(),
+                                            camera_matrix=intrinsics.intrinsic_matrix)
+
+log.info("Starting seek!")
+
+RDK = Robolink()
+
+gantry_base_frame = RDK.Item("gantry-base", ITEM_TYPE_FRAME)
+realsense_frame = RDK.Item("depth",ITEM_TYPE_FRAME)
+robot = RDK.Item("UR10e",ITEM_TYPE_ROBOT)
+car_frame = RDK.Item("CarFrame",ITEM_TYPE_FRAME)
+
+try:
+    handle_pose = RDK.Item("handle",ITEM_TYPE_FRAME)
+    log.info(f"Got pre-existing handle frame:\n{handle_pose.Pose()}")
+except Exception:
+    log.info("Adding handle frame")
+    handle_pose = RDK.AddFrame("handle", realsense_frame)
+    handle_pose.setPose(np_pose_to_robodk(np.eye(4, dtype=np.float64)))
+
+input("Start?")
+
+
+for iteration in range(100):
+    rgbd, _ = cam.read_rgbd()
+    result = door_handle_localizer.localize_o3drgbd(rgbd)
+    if result is None:
+        log.error("Could not find door handle in scene")
+        exit(-1)
+    else:
+        log.info(f"tx_sensor_handle:\n{result['tx_sensor_handle']}")
+
+    tx_realsense_handle = result['tx_sensor_handle']
+
+    # error between current realsense position and target realsense position,
+    # in the frame of current position
+    tx_realsense_target = tx_realsense_handle @ tx_handle_target
+    trans_error_meters = np.linalg.norm(tx_realsense_target[:3,3])
+    rot_error_degrees = math.degrees(np.linalg.norm(cv2.Rodrigues(tx_realsense_target[:3,:3])[0]))
+    log.info(f"translation error: {trans_error_meters} m")
+    log.info(f"rotation error: {rot_error_degrees} deg")
+
+    if trans_error_meters < 0.005 and rot_error_degrees < 1.0:
+        log.info("Reached target!")
+        break
+
+    # export the inferred handle location to RoboDK
+    handle_pose.setParentStatic(realsense_frame)
+    handle_pose.setPose(np_pose_to_robodk(tx_realsense_handle))
+    handle_pose.setParentStatic(gantry_base_frame)
+
+    # set the realsense as the object-to-be-moved by subsequent calls to MoveL
+    robot.setPoseTool(realsense_frame.Parent().Pose()*realsense_frame.Pose())    
+
+    if args.absolute_move:
+        robot.setPoseFrame(handle_pose)
+        robot.MoveL(np_pose_to_robodk(tx_handle_target))
+    else:
+        # rename coordinate frames for clarity since we will be
+        # considering the handle as the fixed frame, and the
+        # realsense as the frame that moves
+        tx_handle_rstarget = tx_handle_target
+        tx_rscurrent_handle = tx_realsense_handle
+        tx_rscurrent_rstarget = tx_rscurrent_handle @ tx_handle_rstarget
+
+        # lerp the move in se3
+        move_delta = scipy.linalg.logm(tx_rscurrent_rstarget)
+        move_delta *= 0.5 # scale the motion down
+        tx_rscurrent_rsdest = scipy.linalg.expm(move_delta)
+
+        robot.setPoseFrame(realsense_frame)
+        robot.MoveL(np_pose_to_robodk(tx_rscurrent_rsdest))
+
+    if not args.simulation:
+        # todo: update the bolt model position in RoboDK
+        pass
+
+    input("Continue?")
+else:
+    log.error("Reached max iterations without settling at target")
+

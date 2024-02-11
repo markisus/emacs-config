@@ -1,0 +1,78 @@
+# fixup dates columns
+
+input_version = 4
+output_version = 5
+
+def add_date_cols(name):
+    sql_m = f"""
+    alter table samples
+    add column {name}_m"""
+
+    sql_d = f"""
+    alter table samples
+    add column {name}_d"""
+
+    sql_y = f"""
+    alter table samples
+    add column {name}_y"""
+
+    
+    
+
+
+def deprecate_date(conn):
+    add_dob_m = """
+                alter table samples
+                add column dob_m integer
+                """
+    add_dob_d = """
+                alter table samples
+                add column dob_d integer
+                """
+    add_dob_y = """
+                alter table samples
+                add column dob_y integer
+                """
+    add_dos_m = """
+                alter table samples
+                add column dos_m integer
+                """
+    add_dos_d = """
+                alter table samples
+                add column dos_d integer
+                """
+    add_dos_y = """
+                alter table samples
+                add column dos_y integer
+                """
+    add_doa_m = """
+                alter table samples
+                add column doa_m integer
+                """
+    add_doa_d = """
+                alter table samples
+                add column doa_d integer
+                """
+    add_doa_y = """
+                alter table samples
+                add column doa_y integer
+                """
+
+
+    
+
+def up(conn):
+    # date of accident
+    conn.cursor().execute(
+        """
+        alter table samples
+        add column doa text;
+        """
+    )
+    # date of service
+    conn.cursor().execute(
+        """
+        alter table samples
+        add column dos text;
+        """
+    )

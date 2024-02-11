@@ -1,0 +1,2 @@
+# delete header lines
+sed '/PriWevMName/d' v0 > v1

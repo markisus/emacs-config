@@ -1,12 +1,10 @@
 ;;; hungry-delete-autoloads.el --- automatically extracted autoloads
 ;;
 ;;; Code:
-
-(add-to-list 'load-path (directory-file-name
-                         (or (file-name-directory #$) (car load-path))))
-
+(add-to-list 'load-path (directory-file-name (or (file-name-directory #$) (car load-path))))
 
-;;;### (autoloads nil "hungry-delete" "hungry-delete.el" (0 0 0 0))
+;;;### (autoloads nil "hungry-delete" "hungry-delete.el" (24084 65180
+;;;;;;  652714 800000))
 ;;; Generated autoloads from hungry-delete.el
 
 (autoload 'hungry-delete-forward "hungry-delete" "\
@@ -79,14 +77,11 @@ See `hungry-delete-mode' for more information on Hungry-Delete mode.
 
 \(fn &optional ARG)" t nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "hungry-delete" '("hungry-delete-")))
-
 ;;;***
 
 ;; Local Variables:
 ;; version-control: never
 ;; no-byte-compile: t
 ;; no-update-autoloads: t
-;; coding: utf-8
 ;; End:
 ;;; hungry-delete-autoloads.el ends here

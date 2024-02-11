@@ -1,13 +1,10 @@
 ;;; mode-line-bell-autoloads.el --- automatically extracted autoloads
 ;;
 ;;; Code:
-
-(add-to-list 'load-path (directory-file-name
-                         (or (file-name-directory #$) (car load-path))))
-
+(add-to-list 'load-path (directory-file-name (or (file-name-directory #$) (car load-path))))
 
-;;;### (autoloads nil "mode-line-bell" "mode-line-bell.el" (0 0 0
-;;;;;;  0))
+;;;### (autoloads nil "mode-line-bell" "mode-line-bell.el" (23601
+;;;;;;  8504 400866 100000))
 ;;; Generated autoloads from mode-line-bell.el
 
 (autoload 'mode-line-bell-flash "mode-line-bell" "\
@@ -30,14 +27,11 @@ Flash the mode line instead of ringing the bell.
 
 \(fn &optional ARG)" t nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "mode-line-bell" '("mode-line-bell-")))
-
 ;;;***
 
 ;; Local Variables:
 ;; version-control: never
 ;; no-byte-compile: t
 ;; no-update-autoloads: t
-;; coding: utf-8
 ;; End:
 ;;; mode-line-bell-autoloads.el ends here

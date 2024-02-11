@@ -1,0 +1,45 @@
+import dlib
+import csv
+import json
+
+images = []
+bboxes = []
+paths = []
+
+with open("door_handles_csv.csv", "r") as f:
+    labels = csv.DictReader(f)
+    for l in labels:
+        filename = l['filename']
+
+        image = dlib.load_rgb_image(filename)
+
+        bbox = json.loads(l['region_shape_attributes'])
+        assert bbox['name'] == 'rect', f"Expected rect label, instead got {bbox['name']}"
+
+        x, y, w, h = bbox['x'], bbox['y'], bbox['width'], bbox['height']
+
+        if h/w >= 0.4:
+            # HOG detector limitation prevents it from detecting
+            # aspect ratios that are too varying, so throw these
+            # ones out
+            continue
+
+        paths.append(filename)
+        images.append(image)        
+        bboxes.append([dlib.rectangle(x, y, x+w, y+h)])
+
+print(bboxes)
+for bbox in bboxes:
+    # print(bbox[0].area())
+    print("ratio", bbox[0].height()/bbox[0].width())
+        
+options = dlib.simple_object_detector_training_options()
+options.C = 10
+options.num_threads = 4
+options.be_verbose = True
+
+detector = dlib.train_simple_object_detector(images=images, boxes=bboxes,
+                                             options=options)
+detector.save("door_handle_detector.svm")
+
+

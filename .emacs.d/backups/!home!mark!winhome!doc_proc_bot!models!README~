@@ -1,0 +1,8 @@
+# 1. train
+python bert_model.py # this exports best_bert_model.pth continuously
+
+# to onnx
+python bert_onnx_export.py # exports bert_model.onnx
+
+# run in nodejs
+node ../app/index.js

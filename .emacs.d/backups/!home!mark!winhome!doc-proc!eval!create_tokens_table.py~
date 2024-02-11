@@ -1,0 +1,13 @@
+from .paths import eval_db_path
+import sqlite3
+
+
+
+conn = sqlite3.connect(eval_db_path)
+token_ids = list(conn.cursor().execute("select distinct token_id from token_inferences"))
+
+print("Token ids", token_ids)
+
+# conn.cursor().execute(
+#     """
+#     create table token_map

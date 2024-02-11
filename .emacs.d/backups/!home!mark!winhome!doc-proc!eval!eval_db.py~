@@ -1,0 +1,342 @@
+# evaluate dataset and store into a queryable database
+
+import time
+import os
+import sqlite3
+from .progressbar import progressbar
+from models import models
+from models import inference_utils as infutils
+from models.dataset import AtlanticSpineTokens
+from models.doc_types import DOC_TYPES as doc_types
+from models.token_categories import TOKEN_COUNT
+from torch.utils.data import DataLoader
+from sklearn.preprocessing import normalize
+from transformers import DistilBertTokenizerFast
+from collections import namedtuple
+import torch
+import numpy as np
+from database import database
+from models.token_categories import *
+from .pretty_print import print_cm
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+db_path = os.path.join(dir_path, "eval.db")
+
+def get_first(value) :
+    return value[0][0] if value else ""
+
+def create_db():
+    sql_docs = \
+           """
+           create table doc_inferences(
+           md5 TEXT PRIMARY KEY,
+           predicted_doc_type TEXT,
+           predicted_first_name TEXT,
+           predicted_last_name TEXT,
+           predicted_dob TEXT,
+           predicted_dos TEXT,
+           predicted_doa TEXT,
+           doc_type TEXT,
+           first_name TEXT,
+           last_name TEXT,
+           dob TEXT,
+           dos TEXT,
+           doa TEXT
+           )
+           """
+    sql_tokens = \
+           """
+           create table token_inferences(
+           md5 TEXT,
+           token_id INTEGER,
+           idx INTEGER,
+           predicted_category INTEGER,
+           category INTEGER
+           )
+           """
+    # other_count is the total number of tokens labeled TOKEN_OTHER
+    # saving it here because correctly predicted TOKEN_OTHER are skipped
+    # in the sql_tokens table to save space
+    sql_summary = \
+                """
+                create table summary(
+                md5 TEXT PRIMARY KEY,
+                txt TEXT,
+                other_count INT
+                )
+                """
+    conn = sqlite3.connect(db_path)
+    for sql in (sql_docs, sql_tokens, sql_summary):
+        conn.cursor().execute(sql)
+    conn.commit()
+    conn.close()
+
+def get_labeled_md5s():
+    try:
+        conn = sqlite3.connect(database.get_db_path())
+        md5s = conn.cursor().execute(
+            """
+            select md5, txt
+            from samples
+            where labeled = 1
+            """).fetchall()
+        conn.close()
+        return md5s
+    except Exception as e:
+        raise KeyError(f"Error getting all labeled md5s ", e)
+
+    return []
+    
+
+def write_docs(conn, bert_pytorch, document_classifier):
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    
+    data = get_labeled_md5s()
+
+    DocInference = namedtuple("DocInference", [
+        "md5",
+        "predicted_doc_type",
+        "predicted_first_name",
+        "predicted_last_name",
+        "predicted_dob",
+        "predicted_dos",
+        "predicted_doa"])
+
+    batch_size = 10;
+    i = 0;
+    while i < len(data):
+        progressbar("inference", i//batch_size, len(data)//batch_size)
+        batch = data[i:i+batch_size]
+        i += batch_size
+
+        # tokenize
+        token_ids = []
+        tokens = []
+        txts = []
+
+        for md5, txt in batch:
+            encoding = infutils.tokenize(txt)
+            token_ids.append(encoding["input_ids"])
+            tokens.append(encoding["tokens"])
+            txts.append(txt)
+
+        # get prob assignments for the tokens in the batch
+        inputs = torch.LongTensor(token_ids).to(device)
+        results = torch.nn.Softmax(dim = 2)(bert_pytorch.forward(inputs).logits).cpu()
+
+        # get document classifications for eachsample in the batch
+        category_probs = document_classifier.predict_proba(txts)
+
+        insertions = []
+        # extract inferences for each sample in the batch
+        for n in range(len(batch)):
+            md5, txt = batch[n]
+            # convert prob to list of list
+            probs = []
+            for token_idx in range(results.shape[1]):
+                probs.append(results[n, token_idx, :].tolist())
+
+            category_prob = category_probs[n].tolist()
+            doc_type = max(zip(doc_types, category_prob), key=lambda t: t[1])[0].lower()
+
+            inference = DocInference(
+                md5 = md5,
+                predicted_doc_type = doc_type,
+                predicted_first_name = get_first(infutils.extract_first_names(tokens[n], probs)),
+                predicted_last_name = get_first(infutils.extract_last_names(tokens[n], probs)),
+                predicted_dob = get_first(infutils.extract_dobs(tokens[n], probs)),
+                predicted_dos = get_first(infutils.extract_doas(tokens[n], probs)),
+                predicted_doa = get_first(infutils.extract_doss(tokens[n], probs))
+            )
+
+            insertions.append(inference)
+
+        conn.cursor().executemany("""
+        insert into doc_inferences(md5, predicted_doc_type, predicted_first_name, predicted_last_name, predicted_dob, predicted_dos, predicted_doa)
+        values (?, ?, ?, ?, ?, ?, ?)
+        """, insertions)
+
+    # transfer over labels from records.db
+    records_conn = sqlite3.connect(database.get_db_path())
+    label_rows = records_conn.cursor().execute("""
+    select 
+    md5, 
+    txt, type, first_name, last_name,
+    dob_m, dob_d, dob_y, 
+    doa_m, doa_d, doa_y, 
+    dos_m, dos_d, dos_y
+    from samples
+    """)
+
+    print("\nTransfering labels...")
+    for md5, txt, doc_type, first_name, last_name, \
+        dob_m, dob_d, dob_y, \
+        doa_m, doa_d, doa_y, \
+        dos_m, dos_d, dos_y in label_rows:
+
+        first_name = first_name.lower()
+        last_name = last_name.lower()
+        dob = database.dob_fmt(dob_m, dob_d, dob_y)
+        doa = database.dob_fmt(doa_m, doa_d, doa_y)
+        dos = database.dob_fmt(dos_m, dos_d, dos_y)
+
+        conn.cursor().execute("""
+        update doc_inferences
+        set 
+        doc_type = ?, 
+        first_name = ?, 
+        last_name = ?, 
+        dob = ?, 
+        doa = ?, 
+        dos = ?
+        where md5 = ?
+        """, (doc_type, first_name, last_name, dob, doa, dos, md5))
+
+        conn.cursor().execute("""
+        insert or ignore into summary (md5) values (?)
+        """, (md5,))
+
+        conn.cursor().execute("""
+        update summary
+        set txt = ?
+        where md5 = ?
+        """, (txt, md5))
+    print("Done writing doc inferences")
+
+def write_tokens(conn, bert_pytorch):
+    tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    total_conf_matrix = np.zeros(shape=(TOKEN_COUNT, TOKEN_COUNT), dtype=np.int64)
+
+    # todo: restrict to test set
+    dataset = AtlanticSpineTokens(database.get_db_path(),
+                                  tokenizer,
+                                  attach_md5s = True,
+                                  augment = False,
+                                  on_progress = lambda curr, total: progressbar("tokenizing", curr, total))
+    batch_size = 10
+    batcher = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    for i, batch in enumerate(batcher):
+        progressbar("inference", i, len(dataset)//batch_size)
+
+        labels = batch['labels'].numpy()
+        input_ids = batch['input_ids'].to(device)        
+        outputs = torch.argmax(bert_pytorch.forward(input_ids).logits, dim=2).cpu().numpy()
+
+        num_in_batch = outputs.shape[0]
+        num_tokens_per_sample = outputs.shape[1] # should be 512?
+
+        TokenInference = namedtuple("TokenInference",
+                                    ["md5", "idx", "token_id", "category", "predicted_category"])
+        insertions = []
+        other_counts = []
+        for sample_idx in range(num_in_batch):
+            md5 = batch['md5'][sample_idx]
+            other_count = 0
+            for token_idx in range(num_tokens_per_sample):
+                token_id = batch['input_ids'][sample_idx, token_idx].item()
+                predicted_category = outputs[sample_idx, token_idx].item()
+                category = labels[sample_idx, token_idx].item()
+
+                if category == TOKEN_OTHER:
+                    other_count += 1
+
+                if category == TOKEN_OTHER and predicted_category == TOKEN_OTHER:
+                    # skip this sample - a correctly guessed TOKEN_OTHER
+                    # to save time & space
+                    continue
+
+                inference = TokenInference(
+                    md5 = md5,
+                    idx = token_idx,
+                    token_id = token_id,
+                    category = category,
+                    predicted_category = predicted_category)
+                insertions.append(inference)
+
+        # insert into db
+        conn.cursor().executemany("""
+        insert into token_inferences(md5, idx, token_id, category, predicted_category)
+        values (?, ?, ?, ?, ?)
+        """, insertions)
+
+        conn.cursor().execute("""
+        insert or ignore into summary (md5) values (?)
+        """, (md5,))
+
+        conn.cursor().execute("""
+        update summary
+        set other_count = ?
+        where md5 = ?
+        """, (other_count, md5))
+
+    print("Done writing token inferences")
+
+def metrics(conn):
+    # create confusion matrix for token level
+    total_confusion_matrix = np.zeros(shape=(TOKEN_COUNT, TOKEN_COUNT))
+    
+    sql = """select category, predicted_category, count(*) from token_inferences group by category, predicted_category"""
+    rows = conn.cursor().execute(sql)
+    for row in rows:
+        category, predicted_category, count = row
+        total_confusion_matrix[category, predicted_category] = count
+
+    sql2 = """select sum(other_count) from summary"""
+    (other_count,) = conn.cursor().execute(sql2).fetchone()
+
+    # did not save correctly predicted TOKEN_OTHER because there are so many
+    # but we can back them out with arithmetic
+    correctly_predicted_other = other_count - sum(total_confusion_matrix[TOKEN_OTHER, :])
+    total_confusion_matrix[TOKEN_OTHER, TOKEN_OTHER] = correctly_predicted_other
+
+    header = ["OTHR", "FNAM", "LNAM", "DOBM", "DOBD", "DOBY", "DOSM",
+              "DOSD", "DOSY", "DOAM", "DOAD", "DOAY"]
+
+    col_normalized_conf_matrix = normalize(total_conf_matrix, axis=0, norm='l1')
+    row_normalized_conf_matrix = normalize(total_conf_matrix, axis=1, norm='l1')
+    print("Row normalized Confusion matrix")
+    print_cm(row_normalized_conf_matrix, labels=header, hide_zeroes=True)
+
+    print("Col normalized Confusion matrix")
+    print_cm(col_normalized_conf_matrix, labels=header, hide_zeroes=True)
+
+    print("Raw Confusion matrix")
+    print_cm(total_conf_matrix, labels=header, hide_zeroes=True)
+
+    
+    
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Evaluate model performance")
+    parser.add_argument("--createdb", help="Create an eval.db. This is necessary before you can calculate metrics.", action="store_true")
+    parser.add_argument("--metrics", help="Display metrics", action="store_true")
+    args = parser.parse_args()
+
+    start = time.time()
+
+    if args.createdb:
+        print("Creating eval.db")
+        if os.path.exists(db_path):
+            yn = input("DB exists - overwrite? y/n ")
+            if yn.lower().strip() == "y":
+                os.remove(db_path)
+            else:
+                exit(0)
+
+        create_db()
+        conn = sqlite3.connect(db_path)
+        bert_pytorch = models.load_bert_pytorch()
+        document_classifier = models.load_scikit_document_classifier()
+        write_docs(conn, bert_pytorch, document_classifier)
+        write_tokens(conn, bert_pytorch)
+        conn.commit()
+        conn.close()
+
+        # also write doc tokens
+    if args.metrics:
+        conn = sqlite3.connect(db_path)
+        metrics(conn)
+
+    end = time.time()
+    print(f"computing db took {end - start} seconds")

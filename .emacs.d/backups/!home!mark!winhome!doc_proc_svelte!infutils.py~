@@ -1,0 +1,115 @@
+from .token_categories import *
+import itertools
+
+# turn month, day, year strings into ints
+def canonicalized_date(m, d, y):
+    try:
+        m_canonical = int(m)
+    except:
+        month_words = {
+            1: "jan",
+            2: "feb",
+            3: "mar",
+            4: "apr",
+            5: "may",
+            6: "jun",
+            7: "jul",
+            8: "aug",
+            9: "sep",
+            10: "oct",
+            11: "nov",
+            12: "dec",
+        }
+
+        for month_num, month_word in month_words.items():
+            if m[:3] == month_word:
+                m_canonical = month_num
+                break
+        else:
+            raise Exception("month number not found for " + m)
+
+    d_canonical = int(d)
+    y_canonical = int(y)
+
+    if y_canonical < 100:
+        # two digit year
+        # either 20XX or 19XX
+        # at the time of writing, the current year is 2021
+        if y_canonical < 21: 
+            y_canonical += 2000
+        else:
+            y_canonical += 1900
+
+    if y_canonical < 1900 or y_canonical > 2021:
+        print(fg.red + f"warning: got weird year {y_canonical}" + bg.rs)
+
+    return m_canonical, d_canonical, y_canonical
+
+def combine_tokens(tokens, probs, prob_thresh, prob_idx, span_dash = False):
+    candidates = {}
+    idx = 0
+    candidate = ""
+    candidate_prob = 0
+    prevWasDash = False
+
+    while idx < len(tokens):
+        token = tokens[idx]
+        token_prob = probs[idx][prob_idx]
+        if not token[:2] == "##" and (not span_dash or (not token == "-" and not prevWasDash)):
+            candidate = token
+            candidate_prob = token_prob
+        else:
+            if token[:2] == "##":
+                token = token[2:]
+            candidate += token
+            if (candidate_prob > token_prob):
+                candidate_prob = token_prob
+
+        if idx + 1 < len(tokens):
+            nextToken = tokens[idx + 1]
+            if not nextToken[:2] == "##" and (not span_dash or not prevWasDash) and candidate_prob >= prob_thresh:
+                existing_prob = candidates.get(candidate, 0)
+                candidates[candidate] = max(candidate_prob, existing_prob)
+        idx += 1
+
+        if token == "-":
+            prevWasDash = True
+        else:
+            prevWasDash = False
+
+    return list(reversed(sorted(candidates.items(), key=lambda kv: kv[1])))
+
+def extract_first_names(tokens, probs):
+    return combine_tokens(tokens, probs, 
+                          prob_thresh=0.1,
+                          prob_idx=TOKEN_FIRST_NAME, span_dash=True)
+
+def extract_last_names(tokens, probs):
+    return combine_tokens(tokens, probs, 
+                   prob_thresh=0.1,
+                   prob_idx=TOKEN_LAST_NAME,
+                   span_dash=True)
+
+def extract_date(m_idx, d_idx, y_idx, tokens, probs):
+    dob_m_guesses = combine_tokens(tokens, probs, prob_thresh=0.1, prob_idx=m_idx, span_dash=False)
+    dob_d_guesses = combine_tokens(tokens, probs, prob_thresh=0.1, prob_idx=d_idx, span_dash=False)
+    dob_y_guesses = combine_tokens(tokens, probs, prob_thresh=0.1, prob_idx=y_idx, span_dash=False)
+
+    guesses = []
+
+    # cartesian product all guesses, take the prob to be the min prob across components
+    for (m, m_prob), (d, d_prob), (y, y_prob) in itertools.product(dob_m_guesses, dob_d_guesses, dob_y_guesses):
+        m, d, y = canonicalized_date(m, d, y)
+        prob = min(m_prob, d_prob, y_prob)
+        guesses.append((f"{str(m).zfill(2)}/{str(d).zfill(2)}/{y}", prob))
+
+    return guesses
+        
+def extract_dobs(tokens, probs):
+    return extract_date(TOKEN_DOB_M, TOKEN_DOB_D, TOKEN_DOB_Y, tokens, probs)
+
+def extract_doss(tokens, probs):
+    return extract_date(TOKEN_DOS_M, TOKEN_DOS_D, TOKEN_DOS_Y, tokens, probs)
+
+def extract_doas(tokens, probs):
+    return extract_date(TOKEN_DOA_M, TOKEN_DOA_D, TOKEN_DOA_Y, tokens, probs)

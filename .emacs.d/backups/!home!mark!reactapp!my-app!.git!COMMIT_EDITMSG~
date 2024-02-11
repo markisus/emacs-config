@@ -1,0 +1,30 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch mark/update-fh
+# Changes to be committed:
+#	new file:   public/adv_codes.txt
+#	modified:   public/fair_health_070_med_fee_schedule.csv
+#	modified:   public/fair_health_070_surgery_center_fee_schedule.csv
+#	modified:   public/fair_health_usa_med_fee_schedule.csv
+#	modified:   src/index.js
+#
+# Untracked files:
+#	.eslintcache
+#	TAGS
+#	public/#fair_health_fee_schedule.csv#
+#	public/TMP_00
+#	public/TMP_01
+#	public/TMP_02
+#	public/union_asc_fee_schedule.csv
+#	scratch
+#	src/OUT
+#	src/OUT1
+#	src/OUT2
+#	src/OUT3
+#	src/OUT4
+#	src/OUT5
+#	src/scratch
+#	src/scratch.csv
+#

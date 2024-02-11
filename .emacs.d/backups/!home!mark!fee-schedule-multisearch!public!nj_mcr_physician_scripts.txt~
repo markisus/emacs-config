@@ -1,0 +1,2 @@
+# replace header with: FAC IND, OPPS CAP IND,PROC CODE, MODIFIER,PAR FEE,NON PAR FEE,LC
+sed '/^ALL CURRENT/,+5 d' nj_mcr_physician_2021.csv > out.csv

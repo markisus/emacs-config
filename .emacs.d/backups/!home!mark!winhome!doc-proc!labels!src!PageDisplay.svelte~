@@ -1,0 +1,22 @@
+<script>
+  export let widthPx;
+  export let heightPx;
+  export let textSizePx;
+
+  export let tokens; // tokens...
+  
+</script>
+
+<style>
+
+</style>
+
+<div style="height:{heightPx}px; width:{widthPx}px; overflow:hidden; position:relative; font-size:{textSizePx}px" class="ba f7 b--black" class:bg-moon-gray={pageIdx === selectedPage} class:bg-light-gray={pageIdx !== selectedPage} class:dn={!showOtherPages && (pageIdx !== selectedPage)} on:click={() => unselectLabel()}>
+  {#each iterPage as tokenGroup, groupIdx}
+    <div style="position:absolute; top:{featTop(tokenGroup.feat)}%; left:{featLeft(tokenGroup.feat)}%; height:{featHeight(tokenGroup.feat)}%; width:{featWidth(tokenGroup.feat)}%;}; display:flex; align-items:center" on:click|stopPropagation={() => selectLabel(selectedMd5, selectedPage, groupIdx)} class:bg-white={isBeingLabeled(labelSelection, selectedMd5, pageIdx, groupIdx)}>
+      {#each tokenGroup.tokens as token, tokenIdx}
+        <span style="position:relative; border-color:{showNet ? categoryToColor(getArgmax(token.prob), NUM_CATEGORIES): 'rgba(0,0,0,0)'}; background-color:{getTokenColor(labelSelection, labels, selectedMd5, pageIdx, groupIdx, tokenIdx)};" class="bb bw1">{showChunks ? token.chunk : stripHashes(token.token)}</span>
+      {/each}
+    </div>
+  {/each}
+</div>

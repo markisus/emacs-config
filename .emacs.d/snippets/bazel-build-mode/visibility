@@ -1,0 +1,6 @@
+# -*- mode: snippet -*-
+# name: visibility
+# key: vis
+# --
+package(default_visibility = [${1:"//visibility:public"}])
+$0

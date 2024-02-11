@@ -1,0 +1,71 @@
+def autorotated_hocr(image):
+    most_english_words = 0
+    best_txt = ""
+    best_rotation = 0
+    best_hocr = ""
+
+    for i in range(4):
+        rotated_img = img.rotate(90*i)
+
+        rotated_hocr = str(pytesseract.image_to_pdf_or_hocr(rotated_img, extension='hocr'))
+        rotated_txt = pytesseract.image_to_string(rotated_img) + " @# "
+        rotated_words = rotated_txt.split()
+
+        num_english_words = 0
+        for word in rotated_words:
+            if ench.check(word):
+                num_english_words += 1
+
+        if num_english_words > most_english_words:
+            most_english_words = num_english_words
+            best_txt = rotated_txt
+            best_rotation = i
+
+    return {
+        'hocr': best_hocr,
+        'txt': best_txt,
+        'rotation': best_rotation
+    }
+
+
+def get_txt_from_hocrs(hocrs):
+    txt = ""
+    for hocr in hocrs:
+        tree = ET.ElementTree(ET.fromstring(hocr))
+        root = tree.getroot()
+        txt += " ".join(root.itertext()) + " @# "
+    txt = txt.replace("\n", "")
+    return txt
+
+def convert_png_to_base64(pil_png):
+    buffered = BytesIO()
+    pil_png.save(buffered, format="png")
+    return base64.b64encode(buffered.getvalue()).decode()
+
+def preprocess_document(file_data, file_type):
+    num_images = 3 # only take first 3 pg
+    if file_type == "pdf":
+        images = pdf2image.convert_from_bytes(file_data, fmt="png")[:num_images]
+    elif file_type in ["tif", "tiff"]:
+        images = []
+        im = PIL.Image.open(BytesIO(file_data))
+        for i, page in enumerate(PIL.ImageSequence.Iterator(im)):
+            if i >= num_images:
+                break
+            images.append(page.copy())
+
+    
+
+    image_shapes = [img.size for img in images]
+    images_base64 = [convert_png_to_base64(img) for img in images]
+    image_shapes = [img.size for img in images]
+    images_base64 = [convert_png_to_base64(img) for img in images]
+    hocrs = [str(pytesseract.image_to_pdf_or_hocr(img, extension='hocr'), 'utf-8') for img in images]
+    txt = get_txt_from_hocrs(hocrs)
+    
+    return {
+        "images": images_base64,
+        "image_shapes": image_shapes,
+        "hocrs": hocrs,
+        "txt": txt,
+    }

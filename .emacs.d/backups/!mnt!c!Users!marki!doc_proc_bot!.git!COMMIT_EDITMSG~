@@ -1,0 +1,41 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch mark/fix-everything
+# Your branch is up to date with 'origin/mark/fix-everything'.
+#
+# Changes to be committed:
+#	modified:   electron/src/react/App.js
+#
+# Changes not staged for commit:
+#	modified:   records.db
+#
+# Untracked files:
+#	TAGS
+#	app/
+#	audit_a.txt
+#	audit_b.txt
+#	audit_list.csv
+#	backend_server/dump.py
+#	backend_server/dumps/
+#	backend_server/matches.txt
+#	electron/src/react/scratch
+#	hello.txt
+#	hocr.js
+#	job_a.csv
+#	md5s.csv
+#	model.pth
+#	models/bert_model.onnx
+#	models/bert_model.pth
+#	models/bert_model/
+#	models/best_bert_model.pth
+#	models/models+dos+doa.zip
+#	models/models.zip
+#	models/onnx/
+#	models/onnx_readable
+#	models/scikit_document_classifier.model
+#	scripts/__init__.py
+#	uipath_job.csv
+#	util/
+#

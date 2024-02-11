@@ -1,0 +1,5 @@
+from models.models import load_biro_net
+from models.word_features_dataset import WordFeaturesDataset
+
+while True:
+    input("Press enter")

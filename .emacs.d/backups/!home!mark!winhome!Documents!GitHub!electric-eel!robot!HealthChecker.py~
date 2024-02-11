@@ -1,0 +1,21 @@
+class HealthChecker:
+    def __init__(self, motors):
+        self.motors = motors
+
+    def check_health():
+        for can_id in (
+                self.motors.shoulder_id,
+                self.motors.elbow_id,
+                self.motors.wrist_id):
+            status = self.motors.status(can_id)
+            if type(status) == dict:
+                # MyActuator2 style
+                
+            elif type(status) == tuple:
+                # MyActuatorDriver style
+                _, _, under_voltage, over_temperature = status
+                if under_voltage:
+                    task_runner.singleton().panic("under voltage")
+                elif over_temperature:
+                    task_runner.singleton().panic("over temperature")
+                

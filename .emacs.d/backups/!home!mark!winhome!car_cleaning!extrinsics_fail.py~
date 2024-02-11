@@ -1,0 +1,7 @@
+import pyrealsense2 as rs
+import os.path
+import argparse
+
+parser = argparse.ArgumentParser(description="No intrinsics bug")
+# Add argument which takes path to a bag file as an input
+parser.add_argument("-i", "--input", type=str, help="Path to the bag file")

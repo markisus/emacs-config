@@ -1,0 +1,63 @@
+# This program converts the output csv of a VIA label csv into a format
+# that is more easily parseable. It produces two files.
+#
+# =bboxes.data=
+# filename x0 y0 x1 y1 (pixel coords)
+#
+# =keypoints.data=
+# filename x1 y1 ... x8 y8 (pixel coords)
+
+import csv
+import json
+import pathlib
+
+root_dir = pathlib.Path(__file__).parent.resolve()
+bboxes_out = []
+keypoints_out = []
+
+with open(root_dir / "labels.csv") as labels_csv:
+    reader = csv.reader(labels_csv)
+    # skip header
+    next(reader)
+    for row in reader:
+        filename = row[0]
+
+        try:
+            shape_attributes = json.loads(row[5])
+            region_attributes = json.loads(row[6])
+        except Exception as e:
+            print("parsing error for file", filename)
+            print("shape attr str", row[5])
+            print("region attr str", row[6])
+            continue
+
+        if len(shape_attributes) == 0:
+            # no labels in this image
+            continue
+
+        if 'classification' not in region_attributes:
+            print(f"file {filename} missing classification")
+            continue
+
+        classification = region_attributes['classification']
+        
+        if shape_attributes['name'] == 'rect':
+            bbox = f"{filename} {classification} {shape_attributes['x']} {shape_attributes['y']} {shape_attributes['x'] + shape_attributes['width']} {shape_attributes['y'] + shape_attributes['height']}"
+            bboxes_out.append(bbox)
+
+        if shape_attributes['name'] == 'polyline':
+            xys = zip(shape_attributes['all_points_x'], shape_attributes['all_points_y'])
+            xys_string = " ".join(f"{str(n[0])} {str(n[1])}" for n in xys)
+            keypoints = f"{filename} {classification} {xys_string}"
+            keypoints_out.append(keypoints)
+
+with open(root_dir / "bboxes.data", "w") as f:
+    for line in bboxes_out:
+        f.write(line)
+        f.write("\n")
+
+with open(root_dir / "keypoints.data", "w") as f:
+    for line in keypoints_out:
+        f.write(line)
+        f.write("\n")
+    

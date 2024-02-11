@@ -1,0 +1,24 @@
+#!/usr/bin/python3.8
+
+import task_runner
+import random
+
+def randomly_fail():
+    
+    
+
+def main():
+    t = task_runner.get_task_runner()
+
+    
+    
+    while True:
+        print("I'm going to sleep now")
+        t.sleep(10) # not really sleeping, actually calling down to run_tasks() here
+        print("I woke up and nothing bad happened!")
+
+
+        t.run_tasks() # 
+
+if __name__ == __main__:
+    main()

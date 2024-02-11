@@ -1,0 +1,20 @@
+import sqlalchemy as sa
+from paths import label_db_path
+
+engine = sa.create_engine('sqlite:///' + label_db_path)
+
+with engine.begin() as conn:
+    rows = conn.execute(
+        sa.text("select md5, word_features from labels where word_features is not null"))
+
+    for row in rows:
+        md5 = row.md5
+            print(f"Migrating {md5} features to page-based format")
+            features = json.loads(row.word_features)
+            for page_no, page_features in enumerate(features):
+                page_features_json = json.dumps(page_features)
+                conn.execute(
+                    sa.text("""
+                    insert into pages (md5, page, features)
+                    values (:md5, :page, :features)
+                    """), {'md5': md5, 'page': page_no, 'features': page_features_json})

@@ -1,0 +1,49 @@
+#!/usr/bin/python3.8
+
+from robodk.robomath import *    
+from robodk.robolink import *
+import numpy as np
+import cv2
+    
+from simulation.sim_config import SimConfig
+
+ROOT_DIR = Path(__file__).parent.absolute()
+DOOR_SEEK_PATH = ROOT_DIR.joinpath("simulation/config/door_seek.json")
+
+def np_pose_to_robodk(np_pose):
+    robodk_pose = np_pose.copy()
+    # robodk expects the translation units to be mm
+    robodk_pose[:3, 3] *= 1000
+    return Mat(robodk_pose.tolist())
+
+np.set_printoptions(precision=3, suppress=True)
+
+RDK = Robolink()
+
+gantry_base_frame = RDK.Item("gantry-base", ITEM_TYPE_FRAME)
+realsense_frame = RDK.Item("depth",ITEM_TYPE_FRAME)
+robot = RDK.Item("UR10e",ITEM_TYPE_ROBOT)
+
+
+tx_realsense_handle = np.array([[ 0.999, -0.023, -0.046, -0.005]
+                                [ 0.033,  0.973,  0.231,  0.027]
+                                [ 0.039, -0.232,  0.972,  0.22 ]
+                                [ 0.   ,  0.   ,  0.   ,  1.   ]])
+tx_realsense_handle = np_pose_to_robodk(result['tx_sensor_handle'])
+
+handle_pose.setParentStatic(realsense_frame)
+handle_pose.setPose(tx_realsense_handle)
+handle_pose.setParentStatic(gantry_base_frame)
+
+robot.setPoseTool(realsense_frame.Pose())
+robot.setPoseFrame(handle_pose)
+
+tx_handle_target = np.eye(4, dtype=np.float64)
+tx_handle_target[2,3] = -0.4
+tx_handle_target
+tx_handle_target = np_pose_to_robodk(tx_handle_target)
+robot.MoveL(tx_handle_target)
+
+    input("Continue?")
+
+

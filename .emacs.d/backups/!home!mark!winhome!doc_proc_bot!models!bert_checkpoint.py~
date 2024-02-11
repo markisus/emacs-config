@@ -1,0 +1,12 @@
+# The following two functions are from the blog post
+# https://medium.com/analytics-vidhya/saving-and-loading-your-model-to-resume-training-in-pytorch-cb687352fa61
+def save_ckp(state, is_best, save_path, best_path):
+    torch.save(state, save_path)
+    if is_best:
+        shutil.copyfile(save_path, best_path)
+
+def load_ckp(device, save_path, model, optimizer):
+    checkpoint = torch.load(save_path, map_location=device)
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    return model, optimizer, checkpoint['epoch']        

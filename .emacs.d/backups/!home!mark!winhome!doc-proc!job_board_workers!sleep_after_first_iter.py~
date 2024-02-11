@@ -1,0 +1,10 @@
+import time
+class SleepAfterFirstIter(object):
+    def __init__(self):
+        self.first_iter = False
+
+    def sleep(time):
+        if not self.first_iter:
+            time.sleep(time)
+
+        self.first_iter = True

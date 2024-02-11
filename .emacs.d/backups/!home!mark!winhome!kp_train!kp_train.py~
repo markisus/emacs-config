@@ -1,0 +1,76 @@
+import dlib
+import time
+
+images = []
+object_detections = []
+
+dataset_size = 327
+# dataset_size = 30
+# dataset_size = 1
+
+for kp_idx in range(dataset_size):
+    image_path = f"kp_data/image_{kp_idx}.png"
+    kp_path = f"kp_data/kps_{kp_idx}.txt"
+    bbox_path = f"kp_data/kps_bbox_{kp_idx}.txt"
+
+    image = dlib.load_rgb_image(image_path)
+    images.append(image)
+
+    # win = dlib.image_window(image, "My image")
+    # win.wait_until_closed()    
+
+    kps = []
+    kp_idx = 0
+    # kp_start_idx = 76
+    kp_start_idx = 0
+    with open(kp_path, "r") as f:
+        for line in f:
+            # DEBUG
+            if kp_idx >= kp_start_idx:
+                kps.append([float(s) for s in line.strip().split()])
+            kp_idx += 1
+
+    print(len(kps))
+
+
+    with open(bbox_path, "r") as f:
+        for line in f:
+            bbox = [int(s) for s in line.strip().split()]
+            
+    rect = dlib.rectangle(bbox[0], bbox[1], bbox[2], bbox[3])
+    parts = [dlib.point(int(p[0]), int(p[1])) for p in kps]
+
+    
+    fod = dlib.full_object_detection(rect, parts)
+    object_detections.append([fod])
+    # object_detections.append(fod)
+        
+    # win.add_overlay(fod)
+
+    # print(fod)
+    print("loaded kps ", kp_idx)
+        
+options = dlib.shape_predictor_training_options()
+options.oversampling_amount = 500
+options.oversampling_translation_jitter = 0.02
+# options.feature_pool_region_padding = 0.5 # prevent picking up incidental context of this training set (arucotag constellation)
+options.num_threads = 12
+# options.nu = 0.5
+options.tree_depth = 4
+options.feature_pool_size = 1200
+options.be_verbose = True
+options.landmark_relative_padding_mode=True
+
+# print(object_detections)
+sp = dlib.train_shape_predictor(images=images,
+                                object_detections=object_detections,
+                                options=options)
+
+sp.save("sp_big.dat")
+
+test_accuracy = dlib.test_shape_predictor(images,
+                                          object_detections,
+                                          sp)
+print("test acc", test_accuracy)
+
+

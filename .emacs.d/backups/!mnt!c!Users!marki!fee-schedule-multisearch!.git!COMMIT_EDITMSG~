@@ -1,0 +1,30 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch master
+# Your branch is ahead of 'origin/master' by 1 commit.
+#   (use "git push" to publish your local commits)
+#
+# Changes to be committed:
+#	modified:   public/fair_health_070_surgery_center_fee_schedule_2022.csv
+#	modified:   public/fair_health_usa_med_fee_schedule_2022.csv
+#	modified:   src/index.js
+#
+# Changes not staged for commit:
+#	modified:   package-lock.json
+#	modified:   package.json
+#
+# Untracked files:
+#	.eslintcache
+#	public/#fair_health_usa_med_fee_schedule_2022.csv#
+#	public/audit
+#	public/out1.csv
+#	public/out2.5.csv
+#	public/out2.csv
+#	public/out3.csv
+#	public/out4.csv
+#	public/out5.csv
+#	public/out6.csv
+#	public/out7.csv
+#

@@ -1,0 +1,21 @@
+def create_db():
+    sql = """
+    create table labels (
+    md5 TEXT PRIMARY KEY,
+    first_name TEXT,
+    first_name_appears INTEGER,
+    last_name TEXT,
+    last_name_appears INTEGER,
+    dob_m INTEGER,
+    dob_d INTEGER,
+    dob_y INTEGER,
+    dob_appears INTEGER,
+    dos_m INTEGER,
+    dos_d INTEGER,
+    dos_y INTEGER,
+    dos_appears INTEGER,
+    doa_m INTEGER,
+    doa_d INTEGER,
+    doa_y INTEGER,
+    doa_appears INTEGER
+    )

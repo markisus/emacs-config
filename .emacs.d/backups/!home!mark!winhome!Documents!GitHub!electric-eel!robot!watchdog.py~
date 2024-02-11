@@ -1,0 +1,15 @@
+class WatchDog:
+    def __init__(self):
+        print("Starting Watchdog!")
+        pass
+
+    def check_health(self):
+        pass
+
+    def sleep(self, seconds):
+        while True:
+            self.check_health()
+
+
+WATCHDOG = WatchDog()
+            

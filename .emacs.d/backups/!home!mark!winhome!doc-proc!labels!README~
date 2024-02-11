@@ -1,0 +1,5 @@
+`python -m labels.database --create` 
+`python -m labels.database --make-feature-files [dump-location]`  
+`python -m labels.database --insert-feature-files [dump-location]`
+`python -m labels.database --post-process`
+

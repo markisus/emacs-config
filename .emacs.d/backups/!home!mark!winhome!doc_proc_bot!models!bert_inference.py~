@@ -1,0 +1,73 @@
+# instructions: first activate the python venv
+# > python -i bert_inference.py
+# > go(dataset[0]["txt"])
+
+import torch
+import os
+from transformers import DistilBertTokenizerFast, DistilBertForTokenClassification, AdamW
+from torch.utils.data import DataLoader
+from dataset import *
+import shutil
+
+model = DistilBertForTokenClassification.from_pretrained('distilbert-base-uncased', num_labels=TOKEN_COUNT)
+
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+model = model.to(device)
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
+best_model_path = os.path.abspath(os.path.join(dir_path, 'best_bert_model.pth'))        
+print(f"Loading model from {best_model_path}")
+checkpoint = torch.load(best_model_path, map_location=device)
+
+model.load_state_dict(checkpoint['state_dict'])
+model.eval()
+
+tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+
+def go(text):
+    encodings = tokenizer(text,
+                          is_split_into_words=False,
+                          return_offsets_mapping=True,
+                          padding=True,
+                          truncation=False)
+
+    tokens = tokenizer.convert_ids_to_tokens(encodings["input_ids"])
+    print("Tokens", tokens)
+
+    inputs = torch.LongTensor([encodings["input_ids"][:512]])
+    inputs = inputs.to(device)
+
+    result = torch.nn.Softmax(dim = 2)(model.forward(inputs).logits).cpu()
+    print(result.shape)
+
+    print("".join([s.ljust(25) for s in ("token id", "token", "unk", "fname", "lname", "dob")]))
+    
+    first_names = []
+    last_names = []
+    dobs = []
+
+    for token_idx in range(result.shape[1]):
+        probs = result[0,token_idx,:]
+        probs_display = "".join( str(int(p*100)).ljust(25) for p in probs )
+        probs_display = probs_display.replace(" 0 ", " _ ") # easier visual
+        
+        print(f'{token_idx}: ({encodings["input_ids"][token_idx]}) '.ljust(25) + \
+              tokens[token_idx].ljust(25) + probs_display)
+
+        if probs[TOKEN_FIRST_NAME] > 0.5:
+            first_names.append(tokens[token_idx])
+        if probs[TOKEN_LAST_NAME] > 0.5:
+            last_names.append(tokens[token_idx])
+        if probs[TOKEN_DOB] > 0.5:
+            dobs.append(tokens[token_idx])
+
+    print("First name guesses: ", first_names)
+    print("Last name guesses: ", last_names)
+    print("DOB name guesses: ", dobs)
+
+db_path = os.path.abspath(os.path.join(dir_path, '../records.db'))
+dataset = AtlanticSpineDocuments(db_path)
+txt = dataset[0]["txt"]
+go(txt)
+    

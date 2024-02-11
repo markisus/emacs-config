@@ -1,0 +1,10 @@
+# The Biro Net is a small wrapper around the DistilBertForTokenClassification from huggingface
+# In addition to accepting input_ids, it also takes in page_x, page_y
+
+import torch
+
+class BiroNet(torch.nn.Module):
+    def __init__(self):
+        super().__init__
+        self.distilbert = None
+        

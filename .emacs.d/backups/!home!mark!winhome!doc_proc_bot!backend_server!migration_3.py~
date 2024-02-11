@@ -1,0 +1,49 @@
+# fixup dates columns
+
+input_version = 4
+output_version = 5
+
+def add_date_cols(name, conn):
+    sql_m = f"""
+    alter table samples
+    add column {name}_m"""
+
+    sql_d = f"""
+    alter table samples
+    add column {name}_d"""
+
+    sql_y = f"""
+    alter table samples
+    add column {name}_y"""
+
+    conn.cursor().execute(sql_m)
+    conn.cursor().execute(sql_d)
+    conn.cursor().execute(sql_y)
+
+def fix_dobs(conn):
+    cur = conn.cursor()
+    rows = cur.execute("select md5, dob from samples where dob is not null");
+    for md5, dob in rows:
+        if not dob:
+            continue
+
+        if "/" in dob:
+            dob_m, dob_d, dob_y  = [int(p.strip()) for p in dob.split("/")]
+        else:
+            dob_m, dob_d, dob_y = [int(p.strip()) for p in dob.split("-")]
+        
+        conn.cursor().execute(
+            """
+            update samples
+            set dob_m = ?, dob_y = ?, dob_d = ? where md5 = ?
+            """, (dob_m, dob_y, dob_d, md5))
+
+def up(conn):
+    add_date_cols("dob", conn)
+    add_date_cols("dos", conn)
+    add_date_cols("doa", conn)
+    fix_dobs(conn)
+    conn.cursor().execute("""
+    alter table samples
+    rename column dob to dob_deprecated""")
+    

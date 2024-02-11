@@ -1,0 +1,10 @@
+import pathlib
+
+
+class BoltChargePortDatset:
+    def __init__(self, root_dir = None):
+        # if root dir is not supplied, use the directory of this .py file
+        self.root_dir = root_dir or pathlib.Path(__file__).parent.resolve()
+
+
+    

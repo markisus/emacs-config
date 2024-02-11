@@ -1,0 +1,344 @@
+import dlib
+import open3d as o3d
+import numpy as np
+import copy
+from pathlib import Path
+import matplotlib.pyplot as plt
+import cv2
+
+from localization.conversions import camera_matrix_to_o3d_intrinsics
+from localization.util import clip_bbox
+
+DEBUG = False
+
+def display_image_bbox(img, bbox):
+    if bbox is None:
+        bbox = (0,0,1,1)
+    img_overlay = cv2.rectangle(img.copy(),
+                                (bbox[0], bbox[1]),
+                                (bbox[2], bbox[3]),
+                                (0,255,255))
+    plt.imshow(img_overlay)
+    plt.show()
+
+# copied from open3d official documentation, license can be found at /open3d_license.txt
+def draw_registration_result(source, target, transformation):
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    # target_temp.paint_uniform_color([1, 0.706, 0])
+    source_temp.paint_uniform_color([0, 0.651, 0.929])
+    source_temp.transform(transformation) # transform = tx_target_source
+    o3d.visualization.draw_geometries([source_temp, target_temp])
+
+def rs_intrinsics_to_o3d(rs_intrinsics):
+    """Convert Realsense intrinsics to Open3d format"""
+    o3d_intrinsics = o3d.camera.PinholeCameraIntrinsic(
+        width=rs_intrinsics.width,
+        height=rs_intrinsics.height,
+        fx=rs_intrinsics.fx,
+        fy=rs_intrinsics.fy,
+        cx=rs_intrinsics.ppx,
+        cy=rs_intrinsics.ppy)
+    return o3d_intrinsics
+
+# copied from open3d official documentation, license can be found at /open3d_license.txt
+def preprocess_point_cloud(pcd, voxel_size):
+    pcd_down = pcd.voxel_down_sample(voxel_size)
+    radius_normal = voxel_size * 2
+    pcd_down.estimate_normals(
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+    radius_feature = voxel_size * 5
+    pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        pcd_down,
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
+    return pcd_down, pcd_fpfh
+
+def bbox_to_o3d_aabb(camera_matrix, bbox, depth_img, depth_scale, depth_min=0.2, depth_max=1.0):
+    min_x, min_y, max_x, max_y = clip_bbox(bbox, depth_img.shape[1], depth_img.shape[0])
+    bbox_min_x = bbox_min_y = float('inf')
+    bbox_max_x = bbox_max_y = -float('inf')
+
+    test_pixels = [(min_x, min_y), (max_x, min_y), (min_x, max_y), (max_x, max_y)]
+    for x, y in test_pixels:
+        depth = depth_img[y, x] * depth_scale
+        if depth <= 0.1 or depth >= 1.0:
+            continue
+
+        wx, wy = pixel_to_camera_plane_coords(camera_matrix, x, y)
+        wx *= depth
+        wy *= depth
+        wz = depth
+
+        bbox_min_x = min(wx, bbox_min_x)
+        bbox_min_y = min(wy, bbox_min_y)
+        bbox_max_x = max(wx, bbox_max_x)
+        bbox_max_y = max(wy, bbox_max_y)
+
+    crop_box = o3d.geometry.AxisAlignedBoundingBox([bbox_min_x, bbox_min_y, depth_min],
+                                                   [bbox_max_x, bbox_max_y, depth_max])
+    return crop_box
+
+# copied from open3d official documentation, license can be found at /open3d_license.txt
+def execute_fast_global_registration(source_down, target_down, source_fpfh,
+                                     target_fpfh, voxel_size):
+    distance_threshold = voxel_size * 0.5
+    result = o3d.pipelines.registration.registration_fgr_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh,
+        o3d.pipelines.registration.FastGlobalRegistrationOption(
+            maximum_correspondence_distance=distance_threshold))
+    return result
+
+# copied from open3d official documentation, license can be found at /open3d_license.txt
+def execute_global_registration(source_down, target_down, source_fpfh,
+                                target_fpfh, voxel_size):
+    distance_threshold = voxel_size * 1.5
+    result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh, True,
+        distance_threshold,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        3, [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(
+                0.9),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(
+                distance_threshold)
+        ], o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999))
+    return result
+
+def run_detector(detector, grayscale_image):
+    if grayscale_image.dtype != np.uint8:
+        # detector only supports 8-bit
+        # assume image is [0-1] floating point format
+        grayscale_image = (grayscale_image * 255.999).astype(np.uint8)
+    converted_image = dlib.convert_image(grayscale_image, dtype="uint8")
+    dets = detector(converted_image)
+    if len(dets) != 1:
+        bbox = None
+    else:
+        det = dets[0]
+        tl = det.tl_corner()
+        br = det.br_corner()
+        bbox = (tl.x, tl.y, br.x, br.y)
+
+    if DEBUG:
+        display_image_bbox(grayscale_image, bbox)
+
+    return bbox
+        
+
+def pixel_to_camera_plane_coords(camera_matrix, x, y):
+    """
+    Shoot a ray through the pixel and find where it intersects
+    a plane 1 meter away.
+    """
+    pixels = np.array([x, y, 1], dtype=np.float64).T
+    result = (np.linalg.inv(camera_matrix) @ pixels).flatten()
+    return result[0], result[1]
+
+def guess_body_coordinate_frame(pcd):
+    """
+    Given a pointcloud, use its covariance matrix
+    to guess a local coordinate frame centered on its centroid.
+    """
+    mean, covar = pcd.compute_mean_and_covariance()
+    _, rot = np.linalg.eigh(covar)
+
+    # make the z axis of the model is the shallow axis (smallest eigenval)
+    # and the x axis is the longest axis (largest eigenval)
+    # this is intuitive when the pointcloud is mostly planar
+    rot[:, [0, 2]] = rot[:, [2, 0]]
+    if rot[0,0] <= 0:
+        rot[:,0] *= -1
+    if rot[1,1] <= 0:
+        rot[:,1] *= -1
+    if rot[2,2] <= 0:
+        rot[:,2] *= -1
+
+    tx_world_body = np.empty(shape=(4,4), dtype=np.float64)
+    tx_world_body[:3,:3] = rot
+    tx_world_body[:3,3] = mean
+    tx_world_body[3,:] = [0,0,0,1]
+    return tx_world_body
+
+def find_door_handle(detector, camera_matrix, depth_scale, depth_image, infra_image):
+    """
+    Heuristic to find and crop out the door handle pointcloud
+    and coordinate frame depth+infrared image
+    """
+
+    # run the image detector
+    door_handle_bbox = run_detector(detector, infra_image)
+    if door_handle_bbox is None:
+        return None
+
+    # turn into a pointcloud and do a rough crop
+    o3d_intrinsics = camera_matrix_to_o3d_intrinsics(
+        width=depth_image.shape[1],
+        height=depth_image.shape[0],
+        camera_matrix=camera_matrix)
+    pcd = o3d.geometry.PointCloud.create_from_depth_image(
+        o3d.geometry.Image(depth_image), o3d_intrinsics, depth_scale=1.0/depth_scale, depth_trunc=1.0)
+    crop_box = bbox_to_o3d_aabb(camera_matrix, door_handle_bbox, depth_image, depth_scale)
+
+    if DEBUG:
+        o3d.visualization.draw_geometries([pcd, crop_box])
+    pcd_cropped = pcd.crop(crop_box)
+    
+    # refine the crop by analyzing the pointcloud covariance
+    # and cutting out some of the door
+    tx_world_handle = guess_body_coordinate_frame(pcd_cropped)
+    center = tx_world_handle[:3,3]
+    rot = tx_world_handle[:3,:3]
+    obb = o3d.geometry.OrientedBoundingBox(
+        center=center, R=rot, extent=np.array([[0.4, 0.1, 0.05]]).T
+    )
+    obb = obb.translate(-rot[:,2]*0.04)
+    pcd_recropped = pcd_cropped.crop(obb)
+
+    return {
+        'pointcloud': pcd,
+        'pointcloud_cropped': pcd_recropped,
+        'image_bbox': door_handle_bbox,
+        '3d_bbox': obb,
+    }
+
+class DoorHandleModel:
+    def __init__(self, full_cloud, cropped_cloud, frame):
+        '''
+        This object provides the pre-built reference frame that DoorHandleLocalizer uses
+        to localize against.
+
+        Parameters:
+            full_cloud (open3d pointcloud): a pointcloud containing the door handle and surrounding door, used for refining ICP
+            cropped_cloud (open3d pointcloud): a cropped version of the previous, containing only the neighborhood
+                                               of points around the door handle, used for initializing ICP
+            frame (4x4 np.array): the coordinate frame of the door handle inside the pointclouds
+        '''
+
+        self.full_cloud = full_cloud
+        self.cropped_cloud = cropped_cloud
+        self.frame = frame
+
+    def visualize(self):
+        frame_viz = o3d.geometry.TriangleMesh().create_coordinate_frame(0.1)
+        frame_viz.transform(self.frame)
+        o3d.visualization.draw_geometries([self.full_cloud, self.cropped_cloud, frame_viz])
+
+    @classmethod
+    def load(self):
+        '''Load the model from filesystem.'''
+        directory = Path(__file__).parent.absolute().joinpath('door_handle_model')
+        full_cloud = o3d.io.read_point_cloud(str(directory.joinpath('handle.pcd')))
+        cropped_cloud = o3d.io.read_point_cloud(str(directory.joinpath('handle_cropped.pcd')))
+        frame = np.load(str(directory.joinpath('handle_frame.npy')))
+
+        return DoorHandleModel(full_cloud, cropped_cloud, frame)
+
+class DoorHandleLocalizer:
+    def __init__(self, model, depth_scale, camera_matrix, image_detector=None):
+        """
+        This object is reponsible for locating the handle of the Bolt's door, using
+        a depth image, and a grayscale infrared image captured from the Realsense.
+
+        Parameters:
+            model (DoorHandleModel): the model to localize against
+            depth_scale (float): depth image values, if they are integers, are multiplied by this amount when turned into a pointcloud
+            camera_matrix (np array): 3x3 intrinsic camera matrix of the infrared sensor
+                                      used with image_detector to initialize ICP
+            image_detector (dlib simple_object_detector): detector that finds the rear door handle in
+                                                          image space, used to initialize ICP
+        """
+        self.model = model
+        self.camera_matrix = camera_matrix
+        self.depth_scale = depth_scale
+        if image_detector is None:
+            detector_path = Path(__file__).parent.absolute().joinpath('door_handle_detector.svm')
+            self.image_detector = dlib.simple_object_detector(str(detector_path))
+        else:
+            self.image_detector = image_detector
+        self.voxel_size = 0.005 # used during feature detection
+        self.downsample = 0.1 # ratio of points that are kept during fine pcd
+        print("INITTING, DEBUG=", DEBUG)
+
+    def localize(self, depth, infrared, init_transform=None):
+        """
+        Returns the transform between the pose of the camera relative to the door handle
+            depth: can be the depth attribute of open3d RGBD image, or a 2D numpy uint16 array
+            infrared: can be the color attribute of open3d RGBD image, or a grayscale
+                      2D numpy uint8 or float array
+                      (note that open3d RGBD's color attribute is actually grayscale)
+        """
+        # coerece to np
+        if type(depth) == o3d.cpu.pybind.geometry.Image:
+            depth = np.asarray(depth)
+        if type(infrared) == o3d.cpu.pybind.geometry.Image:
+            infrared = np.asarray(infrared)
+
+        # self.depth_scale is the depth scale used when consuming 16-bit integer depth
+        # maps provided by the Realsense hardware. However, if we discover that
+        # the depth image passed in is floating point, we will assume normalization by the
+        # depth scale has already occured by an intermediary toolbox like Open3d
+        depth_scale = self.depth_scale
+        if depth.dtype != np.uint16:
+            depth_scale = 1.0 # assume depth values are in units of meters
+        
+        # attempt to detect door handle in image space
+        door_handle = find_door_handle(self.image_detector, self.camera_matrix, depth_scale=depth_scale, depth_image=depth, infra_image=infrared)
+
+        if door_handle is None:
+            return None
+        
+        pcd_cropped = door_handle['pointcloud_cropped']
+        pcd = door_handle['pointcloud']
+
+        if init_transform is None:
+            if DEBUG:
+                print("Doing rough registration")
+            # This method is not that robust
+            # model_down, model_fpfh = preprocess_point_cloud(self.model.cropped_cloud, voxel_size=self.voxel_size)
+            # pcd_down, pcd_fpfh = preprocess_point_cloud(pcd_cropped, voxel_size=self.voxel_size)
+            # rough_registration = execute_global_registration(pcd_down, model_down,
+            #                                                  pcd_fpfh, model_fpfh,
+            #                                                  self.voxel_size)
+            # init_transform = rough_registration.transformation
+
+            tx_pcd_handle = guess_body_coordinate_frame(pcd_cropped)
+            tx_model_handle = self.model.frame
+            tx_model_pcd = tx_model_handle @ np.linalg.inv(tx_pcd_handle)
+            init_transform = tx_model_pcd
+
+            if DEBUG:
+                draw_registration_result(pcd_cropped, self.model.cropped_cloud, init_transform)
+        elif DEBUG:
+            print("Skipping rough registration -- using user supplied init_transform")
+
+        # global registration
+        threshold = 0.002
+        method = o3d.pipelines.registration.TransformationEstimationPointToPoint()
+
+        pcd_down = pcd.random_down_sample(self.downsample)
+        if DEBUG:
+            print("Doing fine registration")
+
+        fine_registration = o3d.pipelines.registration.registration_icp(
+            pcd_down, self.model.full_cloud, threshold, init_transform, method,
+            o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=200))
+
+        if DEBUG:
+            self.model.full_cloud.estimate_normals(
+                o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+            draw_registration_result(pcd_down, self.model.full_cloud, fine_registration.transformation)
+
+        # assuming pcd is in frame of the depth sensor
+        tx_model_sensor = fine_registration.transformation
+        tx_model_handle = self.model.frame
+        tx_sensor_handle = np.linalg.inv(tx_model_sensor) @ tx_model_handle
+
+        return {
+            "tx_model_sensor": fine_registration.transformation,
+            "input_pointcloud": pcd,
+            "tx_sensor_handle": tx_sensor_handle
+        }
+         
+
+        
+        

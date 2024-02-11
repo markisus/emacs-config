@@ -1,0 +1,3 @@
+from models.word_features_dataset import WordFeaturesDataset
+
+dataset = WordFeaturesDataset()

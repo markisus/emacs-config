@@ -1,0 +1,118 @@
+#  add your migration (see instructions in the `get_migrations` function
+#  
+#  then to upgrade existing db
+#   > python -i database.py
+#   > upgrade_db()
+#
+#  or to create a new db
+#   > python -i database.py
+#   > create_db()
+
+import util
+import sqlite3
+import importlib
+
+def get_version():
+    conn = sqlite3.connect(util.get_db_path())
+    cur = conn.cursor()
+    cur.execute("select max(v) from version")
+    (v,) = cur.fetchone()
+    return v
+
+def get_migrations():
+    """
+    to add a migration
+    1. add a file called `migration_xx.py` in this folder
+    2. in that file, add variable `input_version = X`, `output_version = Y`
+    3. in that file, add function up(conn) which takes database version `X -> Y`
+
+    do not call commit() inside your up() and down() functions
+    see migration_0.py for example
+    """
+    # dynamically populated with modules migration_0, migration_1, ...
+    # as long as they exist in this directory
+    migrations = []
+
+    idx = 0
+    while True:
+        module_name = f"migration_{idx}"
+        try:
+            module = importlib.import_module(module_name)
+            migrations.append(module)
+            print("Found", module_name)
+            idx += 1
+        except:
+            break
+    
+    return migrations
+
+def upgrade_db():
+    """
+    this function runs all migrations ahead of the current database version
+    """
+
+    migrations = get_migrations()
+    if not migrations:
+        return True # nothing to be done
+
+    current_version = get_version()
+    target_version = migrations[-1].output_version
+
+    conn = sqlite3.connect(util.get_db_path())
+
+    if current_version < target_version:
+        # upgrade
+        for m in migrations:
+            if current_version == m.input_version:
+                m.up(conn)
+                print(f"Successfully upgraded version {current_version} -> {m.output_version}")
+                current_version = m.output_version
+                if current_version == target_version:
+                    break
+
+    success = current_version == target_version
+    if success:
+        conn.cursor().execute("delete from version")
+        conn.cursor().execute("insert into version(v) values(?)", (target_version,))
+        conn.commit()
+
+    return success
+
+def create_db():
+    conn = sqlite3.connect(util.get_db_path())
+    sqls = [
+        """
+        create table samples(
+            md5 TEXT PRIMARY KEY,
+            txt TEXT,
+            ext TEXT,
+            stamp TIMESTAMP,
+            type INTEGER,
+            first_name TEXT,
+            last_name TEXT,
+            dob TEXT,
+            trained INTEGER,
+            labeled INTEGER,
+            gibberish INTEGER
+        );
+        """,
+
+        "create table version(v integer)",
+
+        "insert into version(v) values(0)"
+    ]
+
+    for sql in sqls:
+        conn.cursor().execute(sql)
+
+    conn.commit()
+    conn.close()
+
+    upgrade_db()
+
+if __name__ == "__main__":
+    import os
+    if not os.path.exists(util.get_db_path()):
+        create_db()
+    upgrade_db()
+

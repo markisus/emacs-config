@@ -1,0 +1,26 @@
+Steps to train and eval an updated model
+========================================
+
+Train the model with `python -m models.bert_model` 
+Run `python -m models.bert_onnx_export`  
+Run `python -m eval.create_db` and confirm overwrite.
+Run `python -m eval.metrics --save` and look at the metrics.
+
+You can look at the eval outputs directly via the sqlite3 database `eval\eval.db`
+
+To commit those changes, DVC add the following
+`models/bert_model.pth`
+`models/best_bert_model.pth`
+`models/bert_model.onnx`
+`eval/eval.db`
+
+And then commit the dvc changes along with
+`eval/tokens_metrics.json`
+`eval/docs_metrics.json`
+
+
+
+
+
+
+

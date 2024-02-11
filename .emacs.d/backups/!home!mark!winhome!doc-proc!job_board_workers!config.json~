@@ -1,0 +1,24 @@
+{
+  "domain": "dev-mw9q8zxe.us.auth0.com",
+  "client_id": "fbYtxc2QCTp8QwMBhAHrmIrpIw1VGObe",
+  "client_secret": "X_FTtLEI0Tlu_33-b2tnDZ1E7oEy9UGvTCP0Fsuxi0gI7FsL1gQ47VSj7_XRwTkG",
+  "audience": "docproc.localhost",
+
+  "org": "test",
+  "backend_url": "http://localhost:8080",
+  "upload_from_folders": [
+    "C:\\Users\\marki\\Desktop\\fax_inbox"
+  ],
+
+  "inserter_heartbeat": "https://heartbeat.uptimerobot.com/m787758954-26256c8c6fdddcc2a9058d5cbd10bd97de0b092e",
+  "discoverer_heartbeat": "https://heartbeat.uptimerobot.com/m787759064-bd1a40057592cc2ce5a45d9b1b7cb5029e524f1e",
+  "submitter_heartbeat": "https://heartbeat.uptimerobot.com/m787759073-f0c4f6fc04e77325ca637a674a29b254cb0169e9",
+  "duplicate_handler_heartbeat": "https://heartbeat.uptimerobot.com/m787759084-6cafd80568bcd02983ff46d4e756a8ca46511378",
+
+  "backup_dir": "C:\\Users\\mark\\Desktop",
+  "log_dir": "C:\\Users\\mark\\Desktop",
+  "ecw_username": "???",
+  "ecw_password": "???",
+  "uipath_file": "???",
+  "uipath_exe": "???"
+}

@@ -1,0 +1,22 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch master
+# Your branch is up to date with 'origin/master'.
+#
+# Changes to be committed:
+#	new file:   bert_model.onnx
+#	new file:   infutils.py
+#	new file:   onnx_inference.py
+#	modified:   public/global.css
+#	new file:   records.db
+#	new file:   scikit_document_classifier.model
+#	modified:   server.py
+#	modified:   src/inference.js
+#	new file:   token_categories.py
+#
+# Untracked files:
+#	TAGS
+#	__pycache__/
+#

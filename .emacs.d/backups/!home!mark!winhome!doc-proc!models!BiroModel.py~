@@ -1,0 +1,2 @@
+# The Biro Model is a small wrapper around the DistilBertForTokenClassification from huggingface
+# In addition to accepting input_ids, it also takes in page_x, page_y page position

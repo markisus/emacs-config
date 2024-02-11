@@ -1,0 +1,6 @@
+def load_doc_types():
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    with open(os.path.abspath(os.path.join(dir_path, '../doc_types.txt')), 'r') as f:
+        return [l.strip() for l in f.readlines() if l.strip()]
+
+DOC_TYPES = load_doc_types()

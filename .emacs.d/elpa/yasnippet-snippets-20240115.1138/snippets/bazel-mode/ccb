@@ -1,0 +1,10 @@
+# -*- mode: snippet -*-
+# name: cc_binary
+# key: ccb
+# --
+cc_binary(
+    name = "$1",
+    srcs = ["$2"],
+    deps = ["$3"]
+)
+$0

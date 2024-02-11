@@ -1,0 +1,36 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch mark/seek-update-car-pose
+# Your branch is ahead of 'origin/mark/seek-update-car-pose' by 2 commits.
+#   (use "git push" to publish your local commits)
+#
+# Changes to be committed:
+#	modified:   seek.py
+#
+# Changes not staged for commit:
+#	modified:   seek.py
+#
+# Untracked files:
+#	TAGS
+#	__pycache__/
+#	camera/__pycache__/
+#	camera/doorpcl.txt
+#	camera/pcl.txt
+#	camera/pclb.txt
+#	localization/#conversions.py#
+#	localization/#test_detector.py#
+#	localization/__init__.py
+#	localization/__pycache__/
+#	localization/door_handle.ply
+#	localization/door_handle_cropped.ply
+#	localization/door_handles_csv.csv
+#	localization/logs/
+#	localization/scratch.py
+#	localization/test.py
+#	localization/test_detector.py
+#	logs/
+#	track.py
+#	weirdness.py
+#

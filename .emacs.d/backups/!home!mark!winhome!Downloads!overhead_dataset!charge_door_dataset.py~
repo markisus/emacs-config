@@ -1,0 +1,95 @@
+import cv2
+import itertools
+import numpy as np
+import pathlib
+
+# classes from the .data file
+classes = ["BACKGROUND", "ac", "dc", "dcf_o", "dcf_c", "cc"]
+
+# human readable translations
+expanded_classes = [
+    "BACKGROUND",
+    "AC Charge Port",
+    "DC Charge Port",
+    "DC Flap Open",
+    "DC Flap Closed",
+    "Outer Charge Cover"]
+
+label_to_idx = { l : classes.index(l) for l in classes }
+
+def parse_line(line):
+    """Parse a line in the format of bboxes.data.
+    
+    Expecting format `filename label x0 y0 x1 y1`
+
+    Returns nested tuple (filename, label, (x0, y0, x1, y1)) where xi yi are ints
+    """
+    tokenized = line.split(" ")
+    filename = tokenized[0]
+    label = label_to_idx[tokenized[1]]
+    bbox = tuple(int(d) for d in tokenized[2:])
+    return (filename, label, bbox)
+
+class BoltChargePortDataset:
+    def __init__(self, root_dir=None, transform=None, target_transform=None, dataset_type=""):
+        self.dataset_type = dataset_type # TODO: train/validate split
+
+        # if root dir is not supplied, use the directory of this .py file
+        self.root_dir = root_dir or pathlib.Path(__file__).parent.resolve()
+        self.root_dir = pathlib.Path(self.root_dir) # if path is user supplied, make sure it's a Path object
+        self.transform = transform
+        self.target_transform = target_transform
+        self.bbox_data_path = self.root_dir / "bboxes.data"
+        self.labels = []
+        self.class_names = expanded_classes
+        self.ingest_labels()
+
+    def ingest_labels(self):
+        with open(self.bbox_data_path, "r") as f:
+            lines = (line for line in f.readlines())
+            tokenized = (line.split(" ") for line in lines)
+            parsed = (parse_line(line) for line in lines)
+            groups = itertools.groupby(parsed, lambda kvp: kvp[0]) # group by filename, assumes sorted by filename
+            for filename, group in groups:
+                # approximate 70/30 test train split
+                # assuming last digit of hash() is uniform 0 to 9
+                file_test_train = "test" if abs(hash(filename)) % 10 >= 7 else "train"
+                if file_test_train != self.dataset_type and len(self.dataset_type):
+                    continue
+                
+                # group is an iterable of (filename, label, bbox) tuples
+                group = list(group) # listify in order to be able to iterate it twice
+                group_classes = tuple(t[1] for t in group)
+                group_bboxes = tuple(t[2] for t in group)
+                self.labels.append((filename, group_classes, group_bboxes))
+
+    def __getitem__(self, idx):
+        filename, classes, bboxes = self.labels[idx]
+        image_path = pathlib.Path(self.root_dir) / filename
+        image = cv2.imread(str(image_path))
+        if image.shape[2] == 1:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # conversion to int64 as specified in open_images.py
+        classes = np.array(classes, dtype='int64')
+        bboxes = np.array(bboxes, dtype=np.float32)
+        if self.transform:
+            image, bboxes, classes = self.transform(image, bboxes, classes)
+        if self.target_transform:
+            bboxes, classes = self.target_transform(bboxes, classes)
+        return image, bboxes, classes
+
+    def __len__(self):
+        return len(self.labels)
+
+if __name__ == "__main__":
+    bcdataset = BoltChargePortDataset()
+
+    # print(bcdataset.labels)
+    print(bcdataset[0])
+                    
+
+            
+
+    

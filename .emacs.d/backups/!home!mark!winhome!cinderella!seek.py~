@@ -1,0 +1,68 @@
+from sim.sim_config import SimConfig, DOOR_SEEK_PATH
+from camera.simulated_camera import SimulatedCamera, DEFAULT_SIM_CONFIG_MEDIUM
+from camera.realsense import RealsenseCamera, DEFAULT_RS_CONFIG_MEDIUM
+
+from localization.door_localization import DoorHandleLocalizer, DoorHandleModel
+import open3d as o3d
+import numpy as np
+import cv2
+
+np.set_printoptions(precision=3, suppress=True)
+
+import localization.door_localization
+localization.door_localization.DEBUG = False
+
+simulation = True
+
+# set up the seek environment
+if simulation:
+    print("Loading the environment")
+    config = SimConfig.parse_file(DOOR_SEEK_PATH)
+    config.to_robodk()
+    print("Loaded the environment")
+
+# Take the initial picture of the scene
+if simulation:
+    cam = SimulatedCamera(DEFAULT_SIM_CONFIG_MEDIUM)
+else:
+    cam = RealsenseCamera(DEFAULT_RS_CONFIG_MEDIUM)
+
+rgbd, intrinsics = cam.read_rgbd()
+# pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
+# o3d.visualization.draw_geometries([pcd])
+
+door_handle_model = DoorHandleModel.load()
+door_handle_localizer = DoorHandleLocalizer(model=door_handle_model,
+                                            depth_scale=cam.depth_scale(),
+                                            camera_matrix=intrinsics.intrinsic_matrix)
+
+# print(np.asarray(rgbd.depth))
+result = door_handle_localizer.localize(depth=rgbd.depth, infrared=rgbd.color)
+if result is None:
+    print("Could not find door handle in scene")
+else:
+    print("tx_sensor_handle = ")
+    print(result['tx_sensor_handle'])
+
+
+from robodk.robomath import *    
+from robodk.robolink import *    # API to communicate with RoboDK
+RDK = Robolink()
+
+realsense_frame = RDK.Item("depth",ITEM_TYPE_FRAME)
+tx_world_realsense = realsense_frame.PoseAbs()
+tx_realsense_handle = Mat(result['tx_sensor_handle'].tolist())
+tx_world_handle = tx_world_realsense * tx_realsense_handle
+
+print("tx_world_realsense", tx_world_realsense)
+print("tx_world_handle", tx_world_handle)
+
+handle_frame = RDK.AddFrame("handle")
+handle_frame.setPose(tx_world_handle.inv())
+
+
+
+# # Revert to initial robot joint positions
+# robot.MoveJ(initial_joints)
+# # Revert to initial TCP offset
+# robot.setPoseTool(original_pose_tool)

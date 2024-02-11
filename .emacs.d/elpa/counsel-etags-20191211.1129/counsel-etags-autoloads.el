@@ -1,12 +1,10 @@
 ;;; counsel-etags-autoloads.el --- automatically extracted autoloads
 ;;
 ;;; Code:
-
-(add-to-list 'load-path (directory-file-name
-                         (or (file-name-directory #$) (car load-path))))
-
+(add-to-list 'load-path (directory-file-name (or (file-name-directory #$) (car load-path))))
 
-;;;### (autoloads nil "counsel-etags" "counsel-etags.el" (0 0 0 0))
+;;;### (autoloads nil "counsel-etags" "counsel-etags.el" (24084 65166
+;;;;;;  9397 600000))
 ;;; Generated autoloads from counsel-etags.el
 
 (autoload 'counsel-etags-guess-program "counsel-etags" "\
@@ -140,12 +138,10 @@ One line in tag file using CODE, TAG-NAME, LINE-NUMBER, and BYTE-OFFSET.
 
 \(fn CODE TAG-NAME LINE-NUMBER &optional BYTE-OFFSET)" nil nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "counsel-etags" '("counsel-etags-")))
-
 ;;;***
 
 ;;;### (autoloads nil "counsel-etags-javascript" "counsel-etags-javascript.el"
-;;;;;;  (0 0 0 0))
+;;;;;;  (24084 65166 14387 900000))
 ;;; Generated autoloads from counsel-etags-javascript.el
 
 (autoload 'counsel-etags-javascript-collect "counsel-etags-javascript" "\
@@ -160,15 +156,8 @@ Use CONTEXT to test CANDIDATE.  If return nil, the CANDIDATE is excluded.
 
 ;;;***
 
-;;;### (autoloads nil "counsel-etags-sdk" "counsel-etags-sdk.el"
-;;;;;;  (0 0 0 0))
-;;; Generated autoloads from counsel-etags-sdk.el
-
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "counsel-etags-sdk" '("counsel-etags-sdk-")))
-
-;;;***
-
-;;;### (autoloads nil nil ("counsel-etags-pkg.el") (0 0 0 0))
+;;;### (autoloads nil nil ("counsel-etags-pkg.el" "counsel-etags-sdk.el")
+;;;;;;  (24084 65166 18380 700000))
 
 ;;;***
 
@@ -176,6 +165,5 @@ Use CONTEXT to test CANDIDATE.  If return nil, the CANDIDATE is excluded.
 ;; version-control: never
 ;; no-byte-compile: t
 ;; no-update-autoloads: t
-;; coding: utf-8
 ;; End:
 ;;; counsel-etags-autoloads.el ends here

@@ -1,0 +1,16 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch mark/basic-health-check
+# Changes to be committed:
+#	modified:   robot/charge.py
+#	modified:   robot/driver.py
+#	new file:   robot/health_checker.py
+#	modified:   robot/myactuator2.py
+#
+# Changes not staged for commit:
+#	modified:   robot/images/bolt-clear-big.png
+#	modified:   robot/images/koz.png
+#	modified:   robot/images/robot-canvas.png
+#

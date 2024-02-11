@@ -1,0 +1,42 @@
+def canonicalized_date(m, d, y):
+    try:
+        m_canonical = int(m)
+    except:
+        month_words = {
+            1: "jan",
+            2: "feb",
+            3: "mar",
+            4: "apr",
+            5: "may",
+            6: "jun",
+            7: "jul",
+            8: "aug",
+            9: "sep",
+            10: "oct",
+            11: "nov",
+            12: "dec",
+        }
+
+        for month_num, month_word in month_words.items():
+            if m[:3] == month_word:
+                m_canonical = month_num
+                break
+        else:
+            raise Exception("month number not found for " + m)
+
+    d_canonical = int(d)
+    y_canonical = int(y)
+
+    if y_canonical < 100:
+        # two digit year
+        # either 20XX or 19XX
+        # at the time of writing, the current year is 2021
+        if y_canonical < 21: 
+            y_canonical += 2000
+        else:
+            y_canonical += 1900
+
+    if y_canonical < 1900 or y_canonical > 2021:
+        print(fg.red + f"warning: got weird year {y_canonical}" + bg.rs)
+
+    return m_canonical, d_canonical, y_canonical

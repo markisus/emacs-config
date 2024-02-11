@@ -1,0 +1,5 @@
+import util
+import slite3
+
+conn = sqlite3.connect(util.get_db_path())
+conn.cursor().execute("select txt from samples where txt is not null")

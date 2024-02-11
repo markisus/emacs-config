@@ -1,0 +1,18 @@
+input_version = 0
+output_version = 1
+
+def up(conn):
+    conn.cursor().execute(
+        """
+        alter table samples
+        add column images text;
+        """
+    )
+
+def down(conn):
+    conn.cursor().execute(
+        """
+        alter table samples
+        drop column images;
+        """
+    )

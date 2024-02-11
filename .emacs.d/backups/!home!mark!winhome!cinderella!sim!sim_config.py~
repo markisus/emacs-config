@@ -1,0 +1,243 @@
+from pydantic import BaseModel
+from typing import Tuple,Dict,Any,List
+from robodk.robolink import *    # API to communicate with RoboDK
+from pydantic import BaseModel,validate_arguments
+
+# Make connection to RoboDK
+RDK = Robolink()
+# Get the path to the RoboDK library (usually in C:/RoboDK/Library/)
+path_library = RDK.getParam("PATH_LIBRARY")
+# Get the path to the custom shaders
+file_shader_fragment = path_library + '/Macros/Camera-Shaders/shader_fragment.glsl'
+file_shader_vertex = path_library + '/Macros/Camera-Shaders/shader_vertex.glsl'
+
+class CameraConfig(BaseModel):
+    """
+    Configuration object that contains the parameters used to set up cameras in RoboDK
+    """
+    FOV:float # Field of view in degrees (2*atan(0.5*height/distance) of the sensor
+    FOCAL_LENGHT:float # focal lenght in mm
+    FOCAL_LENGHT:float=None # maximum working distance (in mm)
+    PIXELSIZE:float=None # Size of the pixel in micro meters (square size assumed)
+    SIZE:Tuple[int,int]# size of the window in pixels (fixed) (width x height)
+    WINDOWFIXED:bool=None # If we specify the Size, make the size of the window exactly the same size
+    SNAPSHOT: Tuple[int,int]=(640,480) # size of the snapshot image in pixels if it should be different from the normal size (width x height). Size can be larger than 4k, depending on graphics card support.
+    BG_COLOR: Tuple[int,int,int]=None #background color (rgb color or named color: AARRGGBB)
+    LIGHT_AMBIENT: Tuple[int,int,int]=None # ambient color (rgb color or named color: AARRGGBB)
+    LIGHT_SPECULAR: Tuple[int,int,int]=None #specular color (rgb color or named color: AARRGGBB)
+    LIGHT_DIFFUSE: Tuple[int,int,int]=None # diffuse color (rgb color or named color: AARRGGBB)
+    DEPTH:bool=None # Add this flag to create a 32 bit depth map (white=close, black=far)
+    GRAYSCALE:bool=None # Add this flag to create a grayscale image
+    SHADER_VERTEX:str=file_shader_vertex # File to a vertex shader (GLSL file)
+    SHADER_FRAGMENT:str=file_shader_fragment # File to a fragment shader (GLSL file)
+    
+    @property
+    def config_str(self):
+        """
+        Cameras are configured in robodk using a config string.
+        This function translates the camera parameters to the config string.
+        """
+        out_args = []
+        for field_name,val in self.__dict__.items():
+            if val is not None:
+                field_type = self.__fields__[field_name].type_
+                if field_type == bool and val==True:
+                    out_args.append(field_name)
+                else:
+                    if field_name in ["SIZE","SNAPSHOT"]:
+                        out_args.append(f"{field_name}={val[0]}x{val[1]}")
+                    else:
+                        out_args.append(f"{field_name}={val}")
+        cam_params = " ".join(out_args)
+        return cam_params
+
+class Offset(BaseModel):
+    """
+    Describes an offset in SE3 in terms of translations and rotations along the xyz axes
+    """
+    tx:float=0.0
+    ty:float=0.0
+    tz:float=0.0
+    rx:float=0.0
+    ry:float=0.0
+    rz:float=0.0
+
+    @property
+    def to_pose(self):
+        """
+        converts the tx,ty,tz,rx,ry,rz notation to SE3 matrix
+        """
+        return robomath.Fanuc_2_Pose((
+            self.tx,
+            self.ty,
+            self.tz,
+            self.rx,
+            self.ry,
+            self.rz
+        ))
+    @classmethod
+    def from_pose(cls,pose):
+        """
+        Converts the SE3 pose matrix into the tx,ty,tz,rx,ry,rz notation
+        """
+        fanuc = robomath.Pose_2_Fanuc(pose)
+        return cls(tx=fanuc[0],ty=fanuc[1],tz=fanuc[2],rx=fanuc[3],ry=fanuc[4],rz=fanuc[5])
+    def offset(self,other_offset):
+        """
+        Returns the linear offset combination of self and other
+        """
+        pose = self.to_pose
+        pose = pose.Offset(
+            other_offset.tx,
+            other_offset.ty,
+            other_offset.tz,
+            other_offset.rx,
+            other_offset.ry,
+            other_offset.rz)
+        return self.from_pose(pose)
+class RealsenseConfig(BaseModel):
+    """
+    Configures realsense camera constants and orients the camera relative to the robot end-plate
+    """
+    depth:CameraConfig=CameraConfig(FOV=77,FOCAL_LENGHT=1.88,SIZE=(640,480))
+    grayscale:CameraConfig=CameraConfig(FOV=77,FOCAL_LENGHT=1.88,SIZE=(640,480))
+    end_plate_offset:Offset
+    def to_robodk(self):
+        self.depth.DEPTH=True
+        self.grayscale.GRAYSCALE=True
+        depth_cam = RDK.Item('Depth Camera', ITEM_TYPE_CAMERA)
+        grayscale_cam = RDK.Item("Grayscale Camera",ITEM_TYPE_CAMERA)
+        RDK.Cam2D_SetParams(self.depth.config_str,depth_cam)
+        RDK.Cam2D_SetParams(self.grayscale.config_str,grayscale_cam)
+        RDK.Item("Realsense",ITEM_TYPE_FRAME).setPose(self.end_plate_offset.to_pose)
+    @classmethod
+    def from_robodk(cls):
+        realsense_frame = RDK.Item('Realsense', ITEM_TYPE_FRAME)
+        return cls(end_plate_offset=Offset.from_pose(realsense_frame.Pose()))
+class DoorConfig(BaseModel):
+    """
+    Configuration for door opening angles
+    """
+    front_driver:float=0.0
+    front_passenger:float=0.0
+    rear_driver:float=0.0
+    rear_passenger:float=0.0
+    @classmethod
+    def from_robodk(cls):
+        front_driver = RDK.Item("driver-front-door",ITEM_TYPE_OBJECT)
+        rear_driver = RDK.Item("driver-rear-door",ITEM_TYPE_OBJECT)
+        front_passenger = RDK.Item("passenger-front-door",ITEM_TYPE_OBJECT)
+        rear_passenger = RDK.Item("passenger-rear-door",ITEM_TYPE_OBJECT)
+        return cls(
+            front_driver=-robomath.Pose_2_Fanuc(front_driver.Pose())[-1],
+            front_passenger=robomath.Pose_2_Fanuc(front_passenger.Pose())[-1],
+            rear_driver=-robomath.Pose_2_Fanuc(rear_driver.Pose())[-1],
+            rear_passenger=robomath.Pose_2_Fanuc(rear_passenger.Pose())[-1]
+        )
+    def to_robodk(self):
+        doors = dict(
+            front_driver = RDK.Item("driver-front-door",ITEM_TYPE_OBJECT),
+            rear_driver = RDK.Item("driver-rear-door",ITEM_TYPE_OBJECT),
+            front_passenger = RDK.Item("passenger-front-door",ITEM_TYPE_OBJECT),
+            rear_passenger = RDK.Item("passenger-rear-door",ITEM_TYPE_OBJECT)
+        )
+        negative=["front_driver","rear_driver"]
+        for name,item in doors.items():
+            fanuc_pose = robomath.Pose_2_Fanuc(item.Pose())
+            if name in negative:
+                fanuc_pose[-1] = -getattr(self,name)
+            else:
+                fanuc_pose[-1] = getattr(self,name)
+            item.setPose(robomath.Fanuc_2_Pose(fanuc_pose))
+class VehicleConfig(BaseModel):
+    """
+    Configuration for vehicle pose and door states
+    """
+    door_angles:DoorConfig=DoorConfig()
+    nominal_pose:Offset=Offset()
+    offset_pose:Offset=Offset()
+       
+    @classmethod
+    def from_robodk(cls):
+        car_frame = RDK.Item("CarFrame",ITEM_TYPE_FRAME)
+        return cls(
+            door_angles=DoorConfig.from_robodk(),
+            nominal_pose=Offset.from_pose(car_frame.Pose()),
+            offset_pose=Offset()
+        )
+    def to_robodk(self):
+        car_frame = RDK.Item("CarFrame",ITEM_TYPE_FRAME)
+        car_pose = self.nominal_pose.offset(self.offset_pose).to_pose
+        car_frame.setPose(car_pose)
+        self.door_angles.to_robodk()
+class XY(BaseModel):
+    x:float
+    y:float
+
+class EndEffector(BaseModel):
+    """
+    Not ready for prime time yet. This will be used to describe the end effector configuration
+    """
+    name:str
+    config:Dict[str,Any]
+
+class RobotConfig(BaseModel):
+    joints:List[float]
+    gantry_home_pose:Offset
+    end_effector:EndEffector=None
+    camera:RealsenseConfig
+
+    @classmethod
+    def from_robodk(cls):
+        robot = RDK.Item('Doosan Robotics M1013',ITEM_TYPE_ROBOT)
+        gantry_home = RDK.Item("gantry-home",ITEM_TYPE_FRAME)
+        return cls(
+            joints = robot.Joints().list(),
+            gantry_home_pose = Offset.from_pose(gantry_home.PoseAbs()),
+            camera = RealsenseConfig.from_robodk()
+        )
+    def to_robodk(self):
+        robot = RDK.Item('Doosan Robotics M1013',ITEM_TYPE_ROBOT)
+        gantry_home = RDK.Item("gantry-home",ITEM_TYPE_FRAME)
+        gantry_base_pose = self.gantry_home_pose.to_pose*gantry_home.Pose().inv()
+        gantry_home.Parent().setPose(gantry_base_pose)
+        self.camera.to_robodk()
+        robot.setJoints(list(self.joints))
+
+
+
+        
+class SimConfig(BaseModel):
+    vehicle:VehicleConfig
+    robot:RobotConfig
+    @classmethod
+    def from_robodk(cls):
+        return cls(
+            vehicle=VehicleConfig.from_robodk(),
+            robot=RobotConfig.from_robodk()
+        )
+    
+    def to_robodk(self):
+        self.vehicle.to_robodk()
+        self.robot.to_robodk()
+
+if __name__=="__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--to-file",help="filepath to save current configuration",type=str,default=None)
+    parser.add_argument("--from-file",help="configuration to load into robodk sim",type=str,default=None)
+    args = parser.parse_args()
+
+    if (args.to_file is None) and (args.from_file is None):
+        raise Exception("Must provide --to-file or --from-file argument")
+    if (args.to_file is not None) and (args.from_file is not None):
+        raise Exception("Must provide --to-file or --from-file argument (not both)")
+    if args.to_file:
+        config = SimConfig.from_robodk()
+        with open(args.to_file,'w') as f:
+            f.write(config.json(indent=3))
+        print(f"Saved configuration to {args.to_file}")
+    if args.from_file:
+        config = SimConfig.parse_file(args.from_file)
+        config.to_robodk()
+        print(f"Loaded configuration from {args.from_file}")

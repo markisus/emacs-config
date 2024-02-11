@@ -1,0 +1,30 @@
+import torch
+import os
+from transformers import DistilBertForTokenClassification
+from .dataset import NUM_TOKEN_CATEGORIES
+from . import util
+from .dimensions import BERT_INPUT_SIZE
+
+from models.models import load_biro_net
+from models.featurizer import FEATURE_SIZE
+
+
+model = load_biro_net()
+inputs = torch.LongTensor([[123] * BERT_INPUT_SIZE])
+word_features = torch.FloatTensor([[0.0] * FEATURE_SIZE ] * BERT_INPUT_SIZE) 
+inputs = inputs.to(device)
+out = model(inputs)
+
+# Export the model
+onnx_export_path = util.get_bert_model_path('onnx')
+torch.onnx.export(model,               # model being run
+                  inputs,              # model input (or a tuple for multiple inputs)
+                  onnx_export_path,   # where to save the model (can be a file or file-like object)
+                  verbose=True,
+                  export_params=True,        # store the trained parameter weights inside the model file
+                  opset_version=12,          # the ONNX version to export the model to
+                  do_constant_folding=True,  # whether to execute constant folding for optimization
+                  input_names = ['input_ids'],   # the model's input names
+                  output_names = ['output'], # the model's output names
+                  dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                                'output' : {0 : 'batch_size'}})

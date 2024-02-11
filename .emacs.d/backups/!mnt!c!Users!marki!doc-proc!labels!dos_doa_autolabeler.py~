@@ -1,0 +1,149 @@
+import os
+import sys
+import sqlite3
+from sty import fg, bg, ef, rs
+import re
+
+if sys.platform == "win32":
+    os.system('color')
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+db_path = os.path.abspath(os.path.join(dir_path, '../records.db'))
+
+date_delim = r"[\/\\\|\-\. ]"
+date_regex_1 = f"0?(?P<month>[12]?[0-9]){date_delim}(?P<day>[0-3]?[0-9]){date_delim}(?P<year>(18|19|20)?[0-9][0-9])[^0-9]"
+
+date_regex_2 = r"(?P<month>(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?))\.?\s+(?P<day>[0-3]?[0-9]),?\s+(?P<year>(18|19|20)?[0-9][0-9])[^0-9]"
+
+doa_intro = r"(date\s+of\s+)?(accident|loss|doa|dol)(\s+date)?:?"
+dos_intro = r"(date\s+of\s+)?(service|exam|test|dos|doe)(\s+date)?:?"
+
+def colorized_match(txt, match):
+    spans = sorted([match.span("month"), match.span("day"), match.span("year")], key=lambda x: x[0])
+
+    # a [span0] b [span1] c [span2] d
+    a  = txt[:spans[0][0]]
+    span0 = txt[spans[0][0]:spans[0][1]]
+    b = txt[spans[0][1]:spans[1][0]]
+    span1 = txt[spans[1][0]:spans[1][1]]
+    c = txt[spans[1][1]:spans[2][0]]
+    span2 = txt[spans[2][0]:spans[2][1]]
+    d = txt[spans[2][1]:]
+
+    return a + fg.li_green + span0 + fg.rs + b + fg.li_green + span1 + fg.rs + c + fg.li_green + span2 + fg.rs + d, spans[0][0], spans[2][1]
+
+def canonicalized(m, d, y):
+    try:
+        m_canonical = int(m)
+    except:
+        month_words = {
+            1: "jan",
+            2: "feb",
+            3: "mar",
+            4: "apr",
+            5: "may",
+            6: "jun",
+            7: "jul",
+            8: "aug",
+            9: "sep",
+            10: "oct",
+            11: "nov",
+            12: "dec",
+        }
+
+        for month_num, month_word in month_words.items():
+            if m[:3] == month_word:
+                m_canonical = month_num
+                break
+        else:
+            raise Exception("month number not found for " + m)
+
+    d_canonical = int(d)
+    y_canonical = int(y)
+
+    if y_canonical < 100:
+        # two digit year
+        # either 20XX or 19XX
+        # at the time of writing, the current year is 2021
+        if y_canonical < 21: 
+            y_canonical += 2000
+        else:
+            y_canonical += 1900
+
+    if y_canonical < 1900 or y_canonical > 2021:
+        print(fg.red + f"warning: got weird year {y_canonical}" + bg.rs)
+
+    return m_canonical, d_canonical, y_canonical
+
+
+def insert(conn, dtype, md5, m, d, y):
+    sql = f"""
+    update samples set {dtype}_m = ?, {dtype}_d = ?, {dtype}_y = ? where md5 = ?
+    """
+    cur = conn.cursor()
+    cur.execute(sql, (m, d, y, md5))
+
+
+def print_dos_doa(txt):
+    match = re.search(doa_intro + r"\s*" + date_regex_1, txt) or \
+            re.search(doa_intro + r"\s*" + date_regex_2, txt)
+    if match:
+        out, beg, end = colorized_match(txt, match)
+        m, d, y = canonicalized(match["month"], match["day"], match["year"])
+        print(f"DOA {m} {d} {y} ", out [beg-100:end+100])
+
+    match = re.search(dos_intro + r"\s*" + date_regex_1, txt) or \
+            re.search(dos_intro + r"\s*" + date_regex_2, txt)
+    if match:
+        out, beg, end = colorized_match(txt, match)
+        m, d, y = canonicalized(match["month"], match["day"], match["year"])
+        print(f"DOS {m} {d} {y} ", out[beg-100:end+100])
+
+
+if __name__ == "__main__":
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    rows = cur.execute("""
+        select md5, txt, first_name, last_name from samples where
+        first_name is not null and
+        last_name is not null and
+        dob_m is not null and
+        dob_d is not null and
+        dob_y is not null and
+        txt is not null
+        """)
+
+    for i, row in enumerate(rows):
+        md5, txt, first_name, last_name = row
+
+        txt = txt.replace("\n", "[n] ")
+        txt = txt.lower()
+        first_name = first_name.lower() # debug
+        last_name = last_name.lower() # debug
+
+        match = re.search(doa_intro + r"\s*" + date_regex_1, txt) or \
+                re.search(doa_intro + r"\s*" + date_regex_2, txt)
+        if match:
+            out, beg, end = colorized_match(txt, match)
+
+            # insert doa into db
+            m, d, y = canonicalized(match["month"], match["day"], match["year"])
+            print(f"DOA {m} {d} {y} ", out [beg-100:end+100])
+            insert(conn, "doa", md5, m, d, y)
+
+
+
+        match = re.search(dos_intro + r"\s*" + date_regex_1, txt) or \
+                re.search(dos_intro + r"\s*" + date_regex_2, txt)
+        if match:
+            out, beg, end = colorized_match(txt, match)
+
+            # insert dol into db
+            m, d, y = canonicalized(match["month"], match["day"], match["year"])
+            print(f"DOS {m} {d} {y} ", out[beg-100:end+100])
+            insert(conn, "dos", md5, m, d, y)
+
+    conn.commit()
+    conn.close()
+
+    

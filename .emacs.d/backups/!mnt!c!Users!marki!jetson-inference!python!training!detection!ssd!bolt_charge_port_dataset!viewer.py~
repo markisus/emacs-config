@@ -1,0 +1,8 @@
+from bolt_charge_port_dataset import BoltChargePortDataset
+
+bcp_dataset = BoltChargePortDataset()
+
+for d in bcp_dataset:
+    image, bboxes, classes = d
+    assert(len(bboxes) == len(classes), "each bbox corresponds to exactly one class")
+    

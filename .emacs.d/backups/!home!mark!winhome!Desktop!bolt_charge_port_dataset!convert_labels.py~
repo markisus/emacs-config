@@ -1,0 +1,46 @@
+# This program converts the output csv of a VIA label csv into a format
+# that is more easily parseable. It produces two files.
+#
+# =bboxes.data=
+# filename x0 y0 x1 y1 (pixel coords)
+#
+# =keypoints.data=
+# filename x1 y1 ... x8 y8 (pixel coords)
+
+import csv
+import json
+import pathlib
+
+root_dir = pathlib.Path(__file__).parent.resolve()
+bboxes_out = []
+keypoints_out = []
+
+with open(root_dir / "labels.csv") as labels_csv:
+    reader = csv.reader(labels_csv)
+    # skip header
+    next(reader)
+    for row in reader:
+        filename = row[0]
+        raw_data = row[5]
+        data = json.loads(raw_data)
+
+        if data['name'] == 'rect':
+            bbox = f"{filename} {data['x']} {data['y']} {data['x'] + data['width']} {data['y'] + data['height']}"
+            bboxes_out.append(bbox)
+
+        if data['name'] == 'polyline':
+            xys = zip(data['all_points_x'], data['all_points_y'])
+            xys_string = " ".join(f"{str(n[0])} {str(n[1])}" for n in xys)
+            keypoints = f"{filename} {xys_string}"
+            keypoints_out.append(keypoints)
+
+with open(root_dir / "bboxes.data", "w") as f:
+    for line in bboxes_out:
+        f.write(line)
+        f.write("\n")
+
+with open(root_dir / "keypoints.data", "w") as f:
+    for line in keypoints_out:
+        f.write(line)
+        f.write("\n")
+    

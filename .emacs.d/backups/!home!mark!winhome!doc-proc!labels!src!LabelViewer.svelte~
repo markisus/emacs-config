@@ -1,0 +1,463 @@
+<script>
+  let selectedMd5 = null;
+  let selectedPage = null;
+  let selection = null;
+  let labelJob = null;
+  let docs = {};
+  let md5ToInformativeness = {}
+  let loadingMd5s = {};
+
+  const getArgmax = (list) => {
+    let maxVal = -Infinity;
+    let argmax = -1;
+    for (let i = 0; i < list.length; ++i) {
+      if (list[i] >= maxVal) {
+        maxVal = list[i];
+        argmax = i;
+      }
+    }
+    return argmax;
+  }
+
+  const handleSelectionChanged = () => {
+    selection = document.getSelection();
+  }
+  document.onselectionchange = handleSelectionChanged;
+
+  let socket = new WebSocket("ws://localhost:8888/socket")
+  const syncDocs = (docs, md5) => {
+    if (socket?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (!(md5 in docs) && !(md5 in loadingMd5s)) {
+      loadingMd5s[md5] = true;
+      socket.send(JSON.stringify({"cmd": "get_md5", "md5": md5}));
+    }
+  };
+  $: syncDocs(docs, selectedMd5);
+  
+  socket.onopen = (event) => {
+    console.log("Socket opened");
+    socket.send(JSON.stringify({"cmd": "get_label_job"}));
+  };
+  socket.onclose = (event) => {
+    console.log("Socket closed");
+  };
+  socket.onmessage = (event) => {
+    let data = JSON.parse(event.data);
+    console.log("Got", data);
+
+    if (data?.cmd === 'get_label_job') {
+      labelJob = data.job;
+
+      for (let job of labelJob) {
+        const md5 = job[0];
+        if (selectedMd5 === null) {
+          selectedMd5 = md5;
+          selectedPage = job[1];
+        }
+        syncDocs(docs, md5);
+      }
+    }
+
+    if (data?.cmd == 'get_md5') {
+      docs[data.md5] = data.doc;
+      console.log("Docs is now", docs)
+    }
+  };
+
+
+  const featTop = (feat) => { return feat[1]*100 };
+  const featLeft = (feat) => { return feat[0]*100 };
+  const featHeight = (feat) => { return (feat[3] - feat[1])*100 };
+  const featWidth = (feat) => { return (feat[2] - feat[0])*100 };
+
+  const wordOpacity = (conf) => {
+    const opacity =  0.3 + 0.7 * (conf/100)
+    return opacity;
+  }
+
+  const tokenColor = (conf, prob) => {
+    let argmax = getArgmax(prob);
+    let maxprob = prob[argmax];
+
+    const tokenHS = [
+      [0, 0], // 0: OTHER
+      [0, 100], // 1: FIRST_NAME
+      [303, 100], // 2: LAST_NAME
+      [32, 100], // 3: DOB_M
+      [56, 100], // 4: DOB_D
+      [80, 100], // 5: DOB_Y
+      [100, 100], // 6: DOS_M
+      [140, 100], // 7: DOS_D,
+      [158, 100], // 8: DOS_Y
+      [181, 100], // 9: DOA_M
+      [200, 100], // 10: DOA_D,
+      [220, 100] // 11: DOA_Y
+    ];
+
+    const [hue, sat] = tokenHS[argmax];
+    const lightness = (1 - maxprob) * 20 + 80;
+    
+    const hsl = `hsl(${hue}, ${sat}%, ${lightness}%)`
+    return hsl;
+  };
+
+  const stripHashes = (token) => {
+    if (token.startsWith("##")) {
+      return token.slice(2);
+    }
+    return token;
+  }
+
+  const stripHashesLength = (token) => {
+    if (token.startsWith("##")) {
+      return token.length - 2;
+    }
+    return token.length;
+  }
+  
+
+  let showNet = true;
+
+  let setDoc = (newMd5, newPage) => {
+    selectedMd5 = newMd5;
+    selectedPage = newPage;
+  }
+
+  let docWidth = 900;
+  $: docHeight = 1200/900 * docWidth;
+
+  const incDocWidth = () => {
+    docWidth += 50;
+  }
+
+  const decDocWidth = () => {
+    if (docWidth > 100) {
+      docWidth -= 100;
+    }
+  }
+
+  let docTextSize = 12;
+  const incDocText = () => {
+    docTextSize += 2;
+  }
+  const decDocText = () => {
+    if (docTextSize > 8) {
+      docTextSize -= 2;
+    }
+  }
+
+  let showChunks = false;
+  let showOtherPages = false;
+
+  let labelSelection = {
+    labelMd5: null,
+    labelPage: null,
+    labelGroupIdx: null,
+    labelTokenIdx: null
+  };
+
+  const getLabelGroup = (docs, labelSelection) => {
+    if (labelSelection.labelMd5 === null || labelSelection.labelPage === null || labelSelection.labelGroupIdx === null) return null;
+    return docs[labelSelection.labelMd5][labelSelection.labelPage][labelSelection.labelGroupIdx];
+  }
+  $: labelGroup = getLabelGroup(docs, labelSelection);
+
+  let labels = {}; // labelGroupId => category
+  const getLabelGroupId = (md5, page, groupIdx) => {
+    return `${md5}.${page}.${groupIdx}`;
+  }
+
+  const selectLabel = (md5, page, groupIdx) => {
+    labelSelection.labelMd5 = md5;
+    labelSelection.labelPage = page;
+    labelSelection.labelGroupIdx = groupIdx;
+    labelSelection.labelTokenIdx = 0;
+    labelSelection = labelSelection; // notify
+  }
+  const unselectLabel = () => {
+    labelSelection.labelMd5 = null;
+    labelSelection.labelPage = null;
+    labelSelection.labelGroupIdx = null;
+    labelSelection.labelTokenIdx = null;
+    labelSelection = labelSelection; // notify
+  }
+  const saveLabel = (category) => {
+    const labelGroupId = getLabelGroupId(labelSelection.labelMd5, labelSelection.labelPage, labelSelection.labelGroupIdx);
+    let labelGroup = labels[labelGroupId];
+
+    if (category === 0) {
+      // Save space by not including OTHER explicitly
+      if (labelGroup !== undefined && (labelSelection.labelTokenIdx in labelGroup)) {
+        delete labelGroup[labelSelection.labelTokenIdx];
+        labels = labels; // notify
+      }
+      return;
+    }
+
+    if (labelGroup === undefined) {
+      labels[labelGroupId] = []
+      labelGroup = labels[labelGroupId];
+    }
+
+    labelGroup[labelSelection.labelTokenIdx] = category;
+    labels = labels;
+  }
+  const saveAndAdvanceLabel = (category) => {
+    if (labelGroup === null) {
+      return;
+    }
+    
+    saveLabel(category);
+    if (labelSelection.labelTokenIdx + 1 < labelGroup.tokens.length) {
+      labelSelection.labelTokenIdx += 1;
+      labelSelection = labelSelection; // notify
+    }
+    else if (labelSelection.labelGroupIdx + 1 < docs[labelSelection.labelMd5][labelSelection.labelPage].length) {
+      labelSelection.labelGroupIdx += 1;
+      labelSelection.labelTokenIdx = 0;
+      labelSelection = labelSelection; // notify
+    } else {
+      unselectLabel();
+    }
+  }
+
+  const SAMELINE = 0;
+
+  const TOKEN_CATEGORIES = [
+    ["OTHER", 0, "o"],
+    ["PATIENT_FIRST_NAME", 1, "ptf"],
+    ["PATIENT_LAST_NAME", 2, "ptl"],
+    ["PROVIDER_FIRST_NAME", 20, "prf"],
+    ["PROVIDER_LAST_NAME", 21, "prl"],
+    ["PROVIDER_ROLE", 24, "prr"],
+    ["SUBSCRIBER_FIRST_NAME", 22, "sfn"],
+    ["SUBSCRIBER_LAST_NAME", 23, "sln"],
+    ["PROCEDURE", 15, "prcd"],
+    ["PROCEDURE_CODE", 16, "prcc"],
+    ["PROCEDURE_AREA", 17, "prca"],
+    ["INSURANCE_DECISION", 18, "id"],
+    ["INSURANCE_PAYMENT_AMT", 19, "ip"],
+    ["DOB_M", 3, "bm"], SAMELINE,
+    ["DOB_D", 4, "bd"], SAMELINE,
+    ["DOB_Y", 5, "by"], 
+    ["DOS_M", 6, "sm"], SAMELINE,
+    ["DOS_D", 7, "sd"], SAMELINE,
+    ["DOS_Y", 8, "sy"],
+    ["DOS_END_M", 12, "sme"], SAMELINE,
+    ["DOS_END_D", 13, "sde"], SAMELINE,
+    ["DOS_END_Y", 14, "sye"],
+    ["DOA_M", 9, "am"], SAMELINE,
+    ["DOA_D", 10, "ad"], SAMELINE,
+    ["DOA_Y", 11, "ay"]
+  ];
+
+  const NUM_CATEGORIES = 25;
+
+  const categoryToColor = (category, numCategories) => {
+    const hue = 360/numCategories * category;
+    const sat = category === 0 ? 0 : 100;
+    const light = 64;
+    return `hsl(${hue}, ${sat}%, ${light}%)`;
+  }
+
+  // tokenIdx optional
+  const isBeingLabeled = (labelSelection, md5, page, groupIdx, tokenIdx) => {
+    return (md5 === labelSelection.labelMd5) && (page === labelSelection.labelPage) && (groupIdx === labelSelection.labelGroupIdx) && (tokenIdx === undefined || tokenIdx === labelSelection.labelTokenIdx);
+  }
+
+  const getTokenColor = (labelSelection, labels, md5, page, groupIdx, tokenIdx) => {
+    if (isBeingLabeled(labelSelection, md5, page, groupIdx, tokenIdx)) {
+      return "hsl(0, 0%, 64%)";
+    }
+
+    const labelGroupId = getLabelGroupId(md5, page, groupIdx, tokenIdx);
+    if (labelGroupId in labels) {
+      const category = labels[labelGroupId][tokenIdx];
+      if (category !== 0 && category !== undefined) return categoryToColor(category, NUM_CATEGORIES);
+    }
+
+    return "rgba(0,0,0,0)";
+  }
+
+  const uploadLabels = () => {
+    if (selectedPage === null || selectedMd5 === null) {
+      return;
+    }
+    
+    let serverLabels = [];
+
+    for (let key of Object.keys(labels)) {
+      let [md5, pageIdx, groupIdx] = key.split(".");
+      if (md5 != selectedMd5) {
+        continue;
+      }
+      if (pageIdx != selectedPage) {
+        continue;
+      }
+      
+      pageIdx = parseInt(pageIdx);
+      groupIdx = parseInt(groupIdx);
+
+      let labelGroup = labels[key];
+      const group = docs[md5][pageIdx][groupIdx]
+      const word = group.word;
+      const tokens = docs[md5][pageIdx][groupIdx].tokens
+
+      // string together the indexes of contiguous tokens of within the group,
+      // as long as they have the same label
+      let wordLabelIdxs = [];
+      for (let wordStart = 0; wordStart < labelGroup.length; ++wordStart) {
+        if (!(wordStart in labelGroup)) continue;
+
+        let wordEnd = wordStart+1;
+        let categoryStart = labelGroup[wordStart];
+
+        for (; wordEnd < labelGroup.length; wordEnd++) {
+          if (!(wordEnd in labelGroup)) break;
+          if (labelGroup[wordEnd] != categoryStart) break;
+        }
+
+        wordLabelIdxs.push([wordStart, wordEnd]);
+
+        wordStart = wordEnd-1;
+        // loop condition then adds 1 to wordStart
+      }
+
+      for (const [wordStart, wordEnd] of wordLabelIdxs) {
+        let startCharIdx = 0;
+        for (let i = 0; i < wordStart; ++i) {
+          startCharIdx += stripHashesLength(tokens[i].token);
+        }
+
+        let endCharIdx = startCharIdx;
+        for (let i = wordStart; i < wordEnd; ++i) {
+          endCharIdx += stripHashesLength(tokens[i].token);
+        }
+
+        const label = {
+          'md5': md5,
+          'page': pageIdx,
+          'group_idx': groupIdx,
+          'category': labelGroup[wordStart],
+          'word': word,
+          'word_start': startCharIdx,
+          'word_end': endCharIdx,
+          'left': group.feat[0],
+          'top': group.feat[1],
+          'right': group.feat[2],
+          'bottom': group.feat[3]
+        }
+
+        serverLabels.push(label);
+      }
+    }
+
+    console.log(serverLabels);
+    socket.send(JSON.stringify({
+      'cmd': 'upload_labels',
+      'md5': selectedMd5,
+      'page': selectedPage,
+      'labels': serverLabels
+    }));
+  }
+
+  const getLabels = () => {
+    socket.send(JSON.stringify({
+      'cmd': 'get_labels'
+    }));
+  }
+
+</script>
+
+<main>
+  <div class="container">
+    <div class="left-pane">
+      Net Outputs <input type="checkbox" bind:checked={showNet}/><br/><br/>
+      Chunks <input type="checkbox" bind:checked={showChunks}/><br/><br/>
+      Other Pages <input type="checkbox" bind:checked={showOtherPages}/><br/><br/>
+      Page Size <button on:click={incDocWidth}>+</button><button on:click={decDocWidth}>-</button><br/><br/>
+      Text Size <button on:click={incDocText}>+</button><button on:click={decDocText}>-</button><br/><br/>
+
+      <button on:click={getLabels}>Get Labels</button>
+
+      {#if labelGroup !== null}
+        {#each labelGroup.tokens as token, tokenIdx}
+          <span class:bb={tokenIdx === labelSelection.labelTokenIdx}>{stripHashes(token.token)}</span>
+        {/each}
+        <br/><br/>
+
+        {#each TOKEN_CATEGORIES as category, categoryIdx}
+          {#if category !== SAMELINE}
+            <button class="f6" style="background-color:{categoryToColor(category[1],NUM_CATEGORIES)}" on:click={() => saveAndAdvanceLabel(category[1])}>{category[0]}:{category[2]}</button>
+            {#if TOKEN_CATEGORIES[categoryIdx + 1] !== SAMELINE}
+              <br/>
+            {/if}
+          {/if}
+        {/each}
+      {/if}
+
+      <br/><br/>
+      <button on:click={() => uploadLabels()}>Upload</button>
+
+    </div>
+    <div class="mid-pane">
+      {#if selectedMd5 !== null && selectedMd5 in docs}
+        {#each docs[selectedMd5] as iterPage, pageIdx}
+          <div id="page_{pageIdx}" style="height:{docHeight}px; width:{docWidth}px; overflow:hidden; position:relative; font-size:{docTextSize}px" class="ba f7 b--black" class:bg-moon-gray={pageIdx === selectedPage} class:bg-light-gray={pageIdx !== selectedPage} class:dn={!showOtherPages && (pageIdx !== selectedPage)} on:click={() => unselectLabel()}>
+            {#each iterPage as tokenGroup, groupIdx}
+              <div id="group_{groupIdx}" style="position:absolute; top:{featTop(tokenGroup.feat)}%; left:{featLeft(tokenGroup.feat)}%; height:{featHeight(tokenGroup.feat)}%; width:{featWidth(tokenGroup.feat)}%;}; display:flex; align-items:center" on:click|stopPropagation={() => selectLabel(selectedMd5, selectedPage, groupIdx)} class:bg-white={isBeingLabeled(labelSelection, selectedMd5, pageIdx, groupIdx)}>
+                {#each tokenGroup.tokens as token, tokenIdx}
+                  <span style="position:relative; border-color:{showNet ? categoryToColor(getArgmax(token.prob), NUM_CATEGORIES): 'rgba(0,0,0,0)'}; background-color:{getTokenColor(labelSelection, labels, selectedMd5, pageIdx, groupIdx, tokenIdx)};" class="bb bw1">{showChunks ? token.chunk : stripHashes(token.token)}</span>
+                {/each}
+              </div>
+
+            {/each}
+          </div>
+        {/each}
+      {:else}
+        <div>Loading...</div>
+      {/if}
+    </div>
+    <div class="right-pane">
+      {#if labelJob !== null}
+        {#each labelJob as job, job_idx}
+          <button on:click={() => setDoc(job[0], job[1])}>{job[0].substring(0, 5)} {job[1]} {job[2].toFixed(4)}</button><br/>
+        {/each}
+      {/if}
+    </div>
+  </div>
+</main>
+
+<style>
+  .container {
+    display: grid;
+    grid-template-columns: 4fr 16fr 2fr;
+    height: 100vh;
+    justify-content: center;
+    unset: max-width;
+    max-width: 100%;
+    width: 100%;
+    margin: auto;
+  }
+
+  .left-pane {
+    padding: 1rem;
+    grid-column: 1 / 2;
+  }
+
+  .mid-pane {
+    grid-column: 2 / 3;
+    min-height: 0;
+    overflow: auto;
+    height: 100%;
+  }
+
+  .right-pane {
+    grid-column: 3 / 4;
+    min-height: 0;
+    overflow: auto;
+  }
+
+</style>

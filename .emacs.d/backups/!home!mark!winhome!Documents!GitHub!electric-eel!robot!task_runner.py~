@@ -1,0 +1,35 @@
+import time
+
+global _task_runner_singleton = None
+
+class TaskRunner:
+    def __init__(self):
+        print("Starting TaskRunner!")
+        self.tasks = []
+
+    def call_repeatedly(self, task):
+        self.tasks.append(task)
+
+    def panic(self, message):
+        # handle graceful system shutdown
+        # ???
+        pass
+
+    def sleep(self, seconds):
+        start = time.now()
+        while time.now() - start <= seconds:
+            for task in self.tasks:
+                task()
+
+def get_watch_dog():
+    if _watchdog_singleton is None:
+        _watch_dog_singleton = WatchDog()
+    else:
+        
+
+    
+        
+
+
+WATCHDOG = WatchDog()
+            

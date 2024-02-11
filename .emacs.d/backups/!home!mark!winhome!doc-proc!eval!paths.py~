@@ -1,0 +1,2 @@
+dir_path = os.path.dirname(os.path.realpath(__file__))
+db_path = os.path.join(dir_path, "eval.db")

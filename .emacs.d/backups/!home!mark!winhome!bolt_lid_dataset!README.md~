@@ -1,0 +1,18 @@
+# Context
+This repo contains the training data and scripts required to generate the bolt lid classifier neural net for the jetson-inference libary on nVidia Jetson. The bolt lid classifier is mainly motivated by the need to tell if the autonomous charger slipped when trying to open the charge lid, which leaves the lid in a partially opened state.  
+
+The labels are  
+  - olid = Opened Lid
+  - clid = Closed Lid
+  - plid = Partially Opened Lid
+
+# Labels
+Use the VIA labeling tool by opening /via-2.0.11/via.html in a browser and loading the overhead.json project.
+
+# Training
+0. Clone the jetson-inference library
+1. Copy this directory to jetson-inference/python/training/detection/ssd/
+2. Overwrite jetson-inference/python/training/detection/ssd/train_ssd.py with the train_ssd.py from this directory
+3. Change directory into jetson-inference/python/training/detection/ssd and run this command. `python train_ssd.py --dataset-type=bolt_lid --model-dir=models/bolt_lid --batch-size=4 --epochs=30 --num-workers=0` (python might have to be substituted for python3 depending on system config.) This will start training. You can also start training from a pre-existing trained model with the --resume command.
+4. Convert the model to onnx format. Use `python onnx_export.py --model-dir=models/bolt_lid`. This produces the ssd-mobilenet.onnx inside the bolt_lid directory.
+5. Copy the ssd-mobilenet.onnx to the Jetson and run it through the detectnet program provided by jetson-inference. This will also generate an optimized tensorrt version.

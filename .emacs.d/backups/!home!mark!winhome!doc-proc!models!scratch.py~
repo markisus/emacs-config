@@ -1,0 +1,14 @@
+from database import database
+import sqlite3
+import xml.etree.ElementTree as ET
+import json
+
+# read hocrs from database
+conn = sqlite3.connect(database.get_db_path())
+rows = list((tuple(row) for row in conn.execute("""
+        select md5, image_shapes, hocrs
+        from samples
+        where (
+        image_shapes is not null and hocrs is not null
+        """)))
+        conn.close()

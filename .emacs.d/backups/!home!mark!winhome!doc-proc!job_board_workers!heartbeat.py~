@@ -1,0 +1,18 @@
+import time
+import requests
+
+class HeartBeat(object):
+    def __init__(self, period_sec = 40, url):
+        self.period_sec = 40
+        self.last_heartbeat = 0
+        self.url = url
+
+    def ok():
+        now = time.monotonic()
+        if (now - self.last_heartbeat) >= HEARTBEAT_PERIOD:
+            try:
+                requests.get(self.url)
+            except Exception e:
+                print(f"Heartbeat {self.url} error ", e)
+        
+        

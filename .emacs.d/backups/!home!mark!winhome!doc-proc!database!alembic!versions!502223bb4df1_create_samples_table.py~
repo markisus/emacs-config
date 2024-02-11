@@ -1,0 +1,24 @@
+"""create samples table
+
+Revision ID: 502223bb4df1
+Revises: 
+Create Date: 2021-03-18 14:34:39.014353
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision = '502223bb4df1'
+down_revision = None
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    pass
+
+
+def downgrade():
+    pass

@@ -1,0 +1,15 @@
+# viz the different clusters
+
+import sqlalchemy as sa
+from .paths import label_db_path
+
+engine = sa.create_engine(f"sqlite:///{label_db_path}")
+
+with engine.begin() as conn:
+    count = conn.execute(
+        sa.text("""
+        select count(*) as cnt from labels
+        where test_train is not null"""),
+        {}).first().cnt
+
+print(count)

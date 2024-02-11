@@ -1,0 +1,6 @@
+# one off script to find date of accident, and date of exam/service in the documents
+
+doa_intro = r"(date of (service|exam)|doe|dos):?\s+)"
+
+doa_1 = doa_intro + date
+doa_2 = doa_intro + "from.*" + date

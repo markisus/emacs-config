@@ -1,0 +1,21 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch mark/active-learning
+# Changes to be committed:
+#	modified:   labels/server.py
+#	modified:   labels/src/LabelApp.svelte
+#	modified:   labels/src/PageDisplay.svelte
+#	modified:   models/inference_utils.py
+#	modified:   models/train_biro_net.py
+#
+# Untracked files:
+#	labels/bad_label_finder.py
+#	labels/clusters.py
+#	labels/requirements.txt
+#	models/bert_model.onnx
+#	models/best_bert_model.pth
+#	models/biro_net.pth
+#	runs/
+#

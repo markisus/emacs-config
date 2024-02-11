@@ -1,0 +1,9 @@
+import torch
+import os
+from transformers import DistilBertTokenizerFast, DistilBertForTokenClassification, AdamW
+from torch.utils.data import DataLoader
+from dataset import AtlanticSpineTokens, TOKEN_COUNT
+import shutil
+
+model = DistilBertForTokenClassification.from_pretrained('distilbert-base-uncased', num_labels=3)
+model.save_pretrained("model")

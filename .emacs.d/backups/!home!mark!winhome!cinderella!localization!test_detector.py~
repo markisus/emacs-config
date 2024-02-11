@@ -1,0 +1,31 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import open3d as o3d
+import dlib
+import cv2
+from localization import run_detector
+
+
+def display_image_bbox(img, bbox):
+    img_overlay = cv2.rectangle(img.copy(),
+                                (bbox[0], bbox[1]),
+                                (bbox[2], bbox[3]),
+                                (255,255,255))
+    plt.imshow(img_overlay)
+    plt.show()
+
+infra1 = np.load("test_data/door_localization_0/infra1.npy")
+infra1 = cv2.cvtColor(infra1, cv2.COLOR_BGR2GRAY)
+
+infra2 = np.load("test_data/door_localization_0/infra2.npy")
+infra2 = cv2.cvtColor(infra2, cv2.COLOR_BGR2GRAY)
+
+camera_matrix = np.load("test_data/door_localization_0/camera_matrix.npy")
+
+detector_path = "door_handle_detector.svm"
+detector = dlib.simple_object_detector(detector_path)
+
+bbox = run_detector(detector, infra2)
+display_image_bbox(infra2, bbox)
+
+print(camera_matrix)

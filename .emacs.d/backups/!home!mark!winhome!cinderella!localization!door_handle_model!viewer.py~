@@ -1,0 +1,13 @@
+import open3d as o3d
+import numpy as np
+
+handle = o3d.io.read_point_cloud("handle.pcd")
+handle_cropped = o3d.io.read_triangle_mesh("handle_cropped.pcd")
+handle_frame = np.read("handle_frame.npy")
+
+
+frame_viz = o3d.geometry.TriangleMesh().create_coordinate_frame(0.1)
+frame_viz.transform(handle_frame)
+
+o3d.visualization.draw_geometries([handle, handle_cropped, handle_frame])
+

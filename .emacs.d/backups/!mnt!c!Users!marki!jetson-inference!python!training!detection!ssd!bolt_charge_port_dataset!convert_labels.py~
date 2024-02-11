@@ -1,0 +1,44 @@
+# This program converts the output csv of a VIA label csv into a format
+# that is more easily parseable. It produces two files.
+#
+# =bboxes.data=
+# filename x y width height
+#
+# =keypoints.data=
+# filename x1 y1 ... x8 y8
+
+import csv
+import json
+
+bboxes_out = []
+keypoints_out = []
+
+with open("labels.csv") as labels_csv:
+    reader = csv.reader(labels_csv)
+    # skip header
+    next(reader)
+    for row in reader:
+        filename = row[0]
+        raw_data = row[5]
+        data = json.loads(raw_data)
+
+        if data['name'] == 'rect':
+            bbox = f"{filename} {data['x']} {data['y']} {data['width']} {data['height']}"
+            bboxes_out.append(bbox)
+
+        if data['name'] == 'polyline':
+            xys = zip(data['all_points_x'], data['all_points_y'])
+            xys_string = " ".join(f"{str(n[0])} {str(n[1])}" for n in xys)
+            keypoints = f"{filename} {xys_string}"
+            keypoints_out.append(keypoints)
+
+with open("bboxes.data", "w") as f:
+    for line in bboxes_out:
+        f.write(line)
+        f.write("\n")
+
+with open("keypoints.data", "w") as f:
+    for line in keypoints_out:
+        f.write(line)
+        f.write("\n")
+    
