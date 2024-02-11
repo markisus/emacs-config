@@ -290,5 +290,3 @@
 ;; (add-hook 'zig-mode-hook #'lsp)
 ;; (eval-after-load "zig-mode"
 ;;   '(define-key zig-mode-map (kbd "M-.") 'lsp-find-definition))
-
-
