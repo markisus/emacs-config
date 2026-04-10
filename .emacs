@@ -86,6 +86,166 @@
 (with-eval-after-load 'dired
   (define-key dired-mode-map (kbd "C-c m") #'casual-dired-tmenu))
 
+;; fix diff-mode for new and deleted files
+;; Fix diff-mode to handle file creation in diffs
+(with-eval-after-load 'diff-mode
+  (defun diff-find-file-name (&optional old noprompt prefix)
+    "Return the file corresponding to the current patch.
+Non-nil OLD means that we want the old file.
+Non-nil NOPROMPT means to prefer returning nil than to prompt the user.
+PREFIX is only used internally: don't use it."
+    (unless (equal diff-remembered-defdir default-directory)
+      (setq-local diff-remembered-defdir default-directory)
+      (setq-local diff-remembered-files-alist nil))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (unless (looking-at diff-file-header-re)
+          (or (ignore-errors (diff-beginning-of-file))
+              (re-search-forward diff-file-header-re nil t)))
+        (let ((fs (diff-hunk-file-names old)))
+          (if prefix (setq fs (mapcar (lambda (f) (concat prefix f)) fs)))
+          (or
+           (cdr (assoc fs diff-remembered-files-alist))
+           (cl-dolist (rf diff-remembered-files-alist)
+             (let ((newfile (diff-merge-strings (caar rf) (car fs) (cdr rf))))
+               (if (and newfile (file-exists-p newfile)) (cl-return newfile))))
+           (cl-do* ((files fs (delq nil (mapcar #'diff-filename-drop-dir files)))
+                    (file nil nil))
+               ((or (null files)
+                    (setq file (cl-do* ((files files (cdr files))
+                                        (file (car files) (car files)))
+                                   ((or (null file) (file-regular-p file))
+                                    file))))
+                file))
+           (and (string-match "\\.rej\\'" (or buffer-file-name ""))
+                (let ((file (substring buffer-file-name 0 (match-beginning 0))))
+                  (when (file-exists-p file) file)))
+           (and (not prefix)
+                (boundp 'cvs-pcl-cvs-dirchange-re)
+                (save-excursion
+                  (re-search-backward cvs-pcl-cvs-dirchange-re nil t))
+                (diff-find-file-name old noprompt (match-string 1)))
+           (unless noprompt
+             (let ((file (or (car fs) ""))
+                   (creation (equal null-device
+                                    (car (diff-hunk-file-names (not old))))))
+               (when (and (memq diff-buffer-type '(git hg))
+                          (string-match "/" file))
+                 (setq file (substring file (match-end 0))))
+               (setq file (expand-file-name file))
+               (setq file
+                     (read-file-name (format "Use file %s: " file)
+                                     (file-name-directory file) file
+                                     (not creation)
+                                     (file-name-nondirectory file)))
+               (when (or (not creation) (file-exists-p file))
+                 (setq-local diff-remembered-files-alist
+                             (cons (cons fs file) diff-remembered-files-alist)))
+               file))))))))
+(with-eval-after-load 'diff-mode
+  (defun diff-apply-hunk (&optional reverse)
+    "Apply the current hunk to the source file and go to the next.
+By default, the new source file is patched, but if the variable
+`diff-jump-to-old-file' is non-nil, then the old source file is
+patched instead (some commands, such as `diff-goto-source' can change
+the value of this variable when given an appropriate prefix argument).
+
+With a prefix argument, REVERSE the hunk."
+    (interactive "P")
+    (diff-beginning-of-hunk t)
+    (pcase-let* ((diff-vc-backend nil)
+                 (deletion (equal null-device (car (diff-hunk-file-names reverse))))
+                 (`(,buf ,line-offset ,pos ,old ,new ,switched)
+                  (diff-find-source-location deletion reverse)))
+      (cond
+       ((null line-offset)
+        (user-error "Can't find the text to patch"))
+       ((with-current-buffer buf
+          (and buffer-file-name
+               (backup-file-name-p buffer-file-name)
+               (not diff-apply-hunk-to-backup-file)
+               (not (setq-local diff-apply-hunk-to-backup-file
+                                (yes-or-no-p (format "Really apply this hunk to %s? "
+                                                     (file-name-nondirectory
+                                                      buffer-file-name)))))))
+        (user-error "%s"
+                    (substitute-command-keys
+                     (format "Use %s\\[diff-apply-hunk] to apply it to the other file"
+                             (if (not reverse) "\\[universal-argument] ")))))
+       ((and switched
+             (not (save-window-excursion
+                    (pop-to-buffer buf)
+                    (goto-char (+ (car pos) (cdr old)))
+                    (y-or-n-p
+                     (if reverse
+                         "Hunk hasn't been applied yet; apply it now? "
+                       "Hunk has already been applied; undo it? ")))))
+        (message "(Nothing done)"))
+       ((and deletion (not switched))
+        (when (y-or-n-p (format-message "Delete file `%s'?" (buffer-file-name buf)))
+          (delete-file (buffer-file-name buf) delete-by-moving-to-trash)
+          (kill-buffer buf)))
+       (t
+        (with-current-buffer buf
+          (goto-char (car pos))
+          (delete-region (car pos) (cdr pos))
+          (insert (car new)))
+        (set-window-point (display-buffer buf) (+ (car pos) (cdr new)))
+        (diff-hunk-status-msg line-offset (xor switched reverse) nil)
+        (when diff-advance-after-apply-hunk
+          (diff-hunk-next)))))))
+(with-eval-after-load 'diff-mode
+  (defun diff-apply-buffer (&optional beg end reverse)
+    "Apply the diff in the entire diff buffer."
+    (interactive)
+    (let ((buffer-edits nil)
+          (delete-bufs nil)
+          (failures 0)
+          (diff-refine nil))
+      (save-excursion
+        (goto-char (or beg (point-min)))
+        (diff-beginning-of-hunk t)
+        (while (pcase-let* ((diff-vc-backend nil)
+                            (deletion (equal null-device
+                                            (car (diff-hunk-file-names reverse))))
+                            (`(,buf ,line-offset ,pos ,_src ,dst ,switched)
+                             (diff-find-source-location deletion reverse)))
+                 (cond ((and line-offset (not switched))
+                        (if deletion
+                            (cl-pushnew buf delete-bufs)
+                          (push (cons pos dst)
+                                (alist-get buf buffer-edits))))
+                       (t (setq failures (1+ failures))))
+                 (and (not (eq (prog1 (point) (ignore-errors (diff-hunk-next)))
+                               (point)))
+                      (or (not end) (< (point) end))
+                      (looking-at-p diff-hunk-header-re)))))
+      (cond ((zerop failures)
+             (dolist (buf-edits (reverse buffer-edits))
+               (with-current-buffer (car buf-edits)
+                 (dolist (edit (cdr buf-edits))
+                   (let ((pos (car edit))
+                         (dst (cdr edit))
+                         (inhibit-read-only t))
+                     (goto-char (car pos))
+                     (delete-region (car pos) (cdr pos))
+                     (insert (car dst))))
+                 (save-buffer)))
+             (dolist (buf delete-bufs)
+               (when (buffer-file-name buf)
+                 (delete-file (buffer-file-name buf) delete-by-moving-to-trash)
+                 (kill-buffer buf)))
+             (message "Saved %d buffers, deleted %d files"
+                      (length buffer-edits) (length delete-bufs))
+             nil)
+            (t
+             (message (ngettext "%d hunk failed; no buffers changed"
+                                "%d hunks failed; no buffers changed"
+                                failures)
+                      failures)
+             failures)))))
+
 ;; Window Management =================================================
 (define-advice pop-global-mark (:around (pgm) use-display-buffer)
   "Make `pop-to-buffer' jump buffers via `display-buffer'."
