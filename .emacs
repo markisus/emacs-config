@@ -87,7 +87,6 @@
   (define-key dired-mode-map (kbd "C-c m") #'casual-dired-tmenu))
 
 ;; fix diff-mode for new and deleted files
-;; Fix diff-mode to handle file creation in diffs
 (with-eval-after-load 'diff-mode
   (defun diff-find-file-name (&optional old noprompt prefix)
     "Return the file corresponding to the current patch.
