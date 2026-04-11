@@ -581,6 +581,29 @@ With prefix arg (C-u), message what happened. Returns non-nil if updated."
 (use-package consult-yasnippet)
 
 ;; gptel ==============================================
+(use-package macher
+  :custom
+  (macher-action-buffer-ui 'org)
+  :config
+  (macher-install)
+  (macher-enable)
+  (add-to-list
+   'display-buffer-alist
+   '("\\*macher:.*\\*"
+     (display-buffer-in-side-window)
+     (side . right)
+     (window-width . 0.45)
+     )
+   )
+  (add-to-list
+   'display-buffer-alist
+   '("\\*macher-patch:.*\\*"
+     (display-buffer-in-side-window)
+     (side . top)
+     (window-height . 0.45)
+     )
+   )
+  )
 (use-package gptel
   :preface
   (define-prefix-command 'my/gptel-prefix-map)  
